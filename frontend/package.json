@@ -1,0 +1,38 @@
+{
+  "name": "pathwise-ai-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PathWise AI SD-WAN Management Dashboard",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "lint": "eslint src/ --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.21.0",
+    "d3": "^7.8.5",
+    "zustand": "^4.4.7",
+    "axios": "^1.6.5",
+    "typescript": "^5.3.3",
+    "tailwindcss": "^3.4.1",
+    "react-scripts": "5.0.1",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@types/d3": "^7.4.3",
+    "web-vitals": "^3.5.2"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/jest-dom": "^6.2.0",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  }
+}
