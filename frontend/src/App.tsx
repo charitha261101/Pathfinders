@@ -64,7 +64,7 @@ function LoadingScreen() {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#0f172a', color: '#94a3b8', fontFamily: 'Inter, system-ui, sans-serif'
+      background: '#ffffff', color: '#64748b', fontFamily: 'Inter, system-ui, sans-serif'
     }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{

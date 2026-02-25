@@ -36,17 +36,17 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         style={{
           width: 260,
           flexShrink: 0,
-          backgroundColor: '#0f172a',
+          backgroundColor: '#ffffff',
           display: 'flex',
           flexDirection: 'column',
-          borderRight: '1px solid #1e293b',
+          borderRight: '1px solid #e2e8f0',
         }}
       >
         {/* Brand */}
         <div
           style={{
             padding: '24px 20px',
-            borderBottom: '1px solid #1e293b',
+            borderBottom: '1px solid #e2e8f0',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -68,7 +68,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 style={{
                   fontSize: 18,
                   fontWeight: 700,
-                  color: '#f1f5f9',
+                  color: '#0f172a',
                   letterSpacing: '-0.025em',
                 }}
               >
@@ -104,8 +104,8 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 fontWeight: 500,
                 textDecoration: 'none',
                 marginBottom: 2,
-                color: isActive ? '#ffffff' : '#94a3b8',
-                backgroundColor: isActive ? '#1e293b' : 'transparent',
+                color: isActive ? '#0f172a' : '#64748b',
+                backgroundColor: isActive ? '#f1f5f9' : 'transparent',
                 transition: 'all 0.15s',
               })}
             >
@@ -119,7 +119,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <div
           style={{
             padding: '16px 12px',
-            borderTop: '1px solid #1e293b',
+            borderTop: '1px solid #e2e8f0',
           }}
         >
           <button
@@ -132,7 +132,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 500,
-              color: '#94a3b8',
+              color: '#64748b',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
@@ -145,7 +145,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               e.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.1)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.color = '#94a3b8';
+              e.currentTarget.style.color = '#64748b';
               e.currentTarget.style.backgroundColor = 'transparent';
             }}
           >
