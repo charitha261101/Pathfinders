@@ -1,73 +1,73 @@
-import { create } from 'zustand';
-
-interface LinkPrediction {
-  health_score: number;
-  confidence: number;
-  latency_forecast: number[];
-  jitter_forecast: number[];
-  packet_loss_forecast: number[];
-  timestamp: string;
-}
-
-interface LinkHealth {
-  health_score: number;
-  confidence: number;
-  latency_current: number;
-  jitter_current: number;
-  packet_loss_current: number;
-  latency_forecast: number[];
-  trend: 'improving' | 'stable' | 'degrading';
-}
-
-interface SteeringEvent {
-  action: string;
-  source: string;
-  target: string;
-  reason: string;
-  timestamp: string;
-}
+import { create } from "zustand";
+import type {
+  LinkHealth,
+  SteeringEvent,
+  ComparisonMetrics,
+  PredictionResponse,
+  ActiveRoutingRule,
+} from "../types";
 
 interface NetworkState {
-  // Active links
   activeLinks: string[];
   setActiveLinks: (links: string[]) => void;
 
-  // Predictions per link
-  predictions: Record<string, LinkPrediction>;
-  updatePredictions: (preds: Record<string, LinkPrediction>) => void;
+  lstmEnabled: boolean;
+  setLstmEnabled: (enabled: boolean) => void;
 
-  // Real-time health data (from WebSocket)
   scoreboard: Record<string, LinkHealth>;
   updateScoreboard: (data: Record<string, LinkHealth>) => void;
 
-  // Steering events
-  steeringHistory: SteeringEvent[];
-  addSteeringEvent: (event: SteeringEvent) => void;
+  predictions: Record<string, PredictionResponse>;
+  updatePredictions: (preds: Record<string, PredictionResponse>) => void;
 
-  // Connection state
+  steeringEvents: SteeringEvent[];
+  setSteeringEvents: (events: SteeringEvent[]) => void;
+
+  activeRoutingRules: ActiveRoutingRule[];
+  setActiveRoutingRules: (rules: ActiveRoutingRule[]) => void;
+
+  comparison: {
+    lstm_on: ComparisonMetrics;
+    lstm_off: ComparisonMetrics;
+  };
+  updateComparison: (data: NetworkState["comparison"]) => void;
+
   wsConnected: boolean;
   setWsConnected: (connected: boolean) => void;
+
+  tickCount: number;
+  setTickCount: (n: number) => void;
 }
 
 export const useNetworkStore = create<NetworkState>((set) => ({
   activeLinks: [],
   setActiveLinks: (links) => set({ activeLinks: links }),
 
-  predictions: {},
-  updatePredictions: (preds) =>
-    set((state) => ({
-      predictions: { ...state.predictions, ...preds },
-    })),
+  lstmEnabled: false,
+  setLstmEnabled: (enabled) => set({ lstmEnabled: enabled }),
 
   scoreboard: {},
   updateScoreboard: (data) => set({ scoreboard: data }),
 
-  steeringHistory: [],
-  addSteeringEvent: (event) =>
-    set((state) => ({
-      steeringHistory: [event, ...state.steeringHistory].slice(0, 100),
-    })),
+  predictions: {},
+  updatePredictions: (preds) =>
+    set((s) => ({ predictions: { ...s.predictions, ...preds } })),
+
+  steeringEvents: [],
+  setSteeringEvents: (events) => set({ steeringEvents: events }),
+
+  activeRoutingRules: [],
+  setActiveRoutingRules: (rules) => set({ activeRoutingRules: rules }),
+
+  comparison: {
+    lstm_on: { avg_latency: 0, avg_jitter: 0, avg_packet_loss: 0 },
+    lstm_off: { avg_latency: 0, avg_jitter: 0, avg_packet_loss: 0 },
+  },
+  updateComparison: (data) => set({ comparison: data }),
 
   wsConnected: false,
   setWsConnected: (connected) => set({ wsConnected: connected }),
+
+  tickCount: 0,
+  setTickCount: (n) => set({ tickCount: n }),
 }));

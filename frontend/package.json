@@ -1,8 +1,8 @@
 {
   "name": "pathwise-ai-dashboard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "PathWise AI SD-WAN Management Dashboard",
+  "description": "PathWise AI — Ultrarealistic SD-WAN Management Dashboard",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -10,29 +10,41 @@
     "lint": "eslint src/ --ext .ts,.tsx"
   },
   "dependencies": {
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "ajv": "^8.12.0",
+    "autoprefixer": "^10.4.17",
+    "axios": "^1.6.5",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^0.312.0",
+    "postcss": "^8.4.33",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
-    "d3": "^7.8.5",
-    "zustand": "^4.4.7",
-    "axios": "^1.6.5",
-    "typescript": "^5.3.3",
-    "tailwindcss": "^3.4.1",
     "react-scripts": "5.0.1",
-    "@types/react": "^18.2.48",
-    "@types/react-dom": "^18.2.18",
-    "@types/d3": "^7.4.3",
-    "web-vitals": "^3.5.2"
+    "recharts": "^2.10.0",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "web-vitals": "^3.5.2",
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
-    "@testing-library/react": "^14.1.2",
     "@testing-library/jest-dom": "^6.2.0",
-    "eslint": "^8.56.0",
+    "@testing-library/react": "^14.1.2",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
-    "@typescript-eslint/parser": "^6.19.0"
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0"
   },
   "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   }
 }

@@ -21,15 +21,15 @@ def generate_link_telemetry(
     timestamps = pd.date_range(start="2026-01-01", periods=n_points, freq=f"{interval_sec}s")
     
     # Diurnal pattern (peak at 10am and 2pm local time)
-    hour_of_day = timestamps.hour + timestamps.minute / 60.0
+    hour_of_day = (timestamps.hour + timestamps.minute / 60.0).to_numpy()
     diurnal = 0.3 * np.sin(2 * np.pi * (hour_of_day - 6) / 24) + 0.7
     
-    # Base metrics with noise
-    base_latency = 15 + 10 * diurnal + np.random.normal(0, 2, n_points)
-    base_jitter = 1 + 3 * diurnal + np.random.normal(0, 0.5, n_points)
-    base_loss = np.clip(0.01 + 0.05 * diurnal + np.random.normal(0, 0.01, n_points), 0, 100)
-    base_bw = np.clip(30 + 40 * diurnal + np.random.normal(0, 5, n_points), 0, 100)
-    base_rtt = base_latency * 2 + np.random.normal(0, 1, n_points)
+    # Base metrics with noise (ensure numpy arrays for mutable slice assignment)
+    base_latency = np.array(15 + 10 * diurnal + np.random.normal(0, 2, n_points), dtype=np.float64)
+    base_jitter = np.array(1 + 3 * diurnal + np.random.normal(0, 0.5, n_points), dtype=np.float64)
+    base_loss = np.clip(np.array(0.01 + 0.05 * diurnal + np.random.normal(0, 0.01, n_points), dtype=np.float64), 0, 100)
+    base_bw = np.clip(np.array(30 + 40 * diurnal + np.random.normal(0, 5, n_points), dtype=np.float64), 0, 100)
+    base_rtt = np.array(base_latency * 2 + np.random.normal(0, 1, n_points), dtype=np.float64)
     
     # Inject brownout events (gradual degradation over 30-120 seconds)
     brownout_mask = np.random.random(n_points) < brownout_probability
