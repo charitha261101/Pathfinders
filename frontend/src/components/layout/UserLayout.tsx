@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-const NAV_ITEMS = [
+const NAVIGATION_ITEMS = [
   { to: '/user/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/user/sites', icon: MapPin, label: 'My Sites & Analytics' },
   { to: '/user/traffic', icon: Activity, label: 'Traffic Overview' },
@@ -27,7 +27,7 @@ const NAV_ITEMS = [
   { to: '/user/profile', icon: UserCircle, label: 'My Profile' },
 ];
 
-const TOOLS_NAV = [
+const NETWORK_TOOLS_NAVIGATION = [
   { to: '/user/apps', icon: Radio, label: 'App Priority Switch' },
   { to: '/user/telemetry', icon: Network, label: 'Network Simulation' },
   { to: '/user/sandbox', icon: FlaskConical, label: 'Digital Twin Sandbox' },
@@ -41,7 +41,7 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      {/* Sidebar */}
+      {/* Sidebar Container */}
       <aside
         style={{
           width: 260,
@@ -52,7 +52,7 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           borderRight: '1px solid #1e293b',
         }}
       >
-        {/* Brand */}
+        {/* Brand Section */}
         <div
           style={{
             padding: '24px 20px',
@@ -98,9 +98,9 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         </div>
 
-        {/* Navigation */}
+        {/* Navigation Menu */}
         <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto' }}>
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+          {NAVIGATION_ITEMS.map(({ to, icon: IconComponent, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -119,12 +119,12 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 transition: 'all 0.15s',
               })}
             >
-              <Icon style={{ width: 16, height: 16 }} />
+              <IconComponent style={{ width: 16, height: 16 }} />
               {label}
             </NavLink>
           ))}
 
-          {/* Separator + Network Tools */}
+          {/* Divider + Network Tools Section */}
           <div style={{
             margin: '12px 0 8px',
             padding: '0 12px',
@@ -138,7 +138,7 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           }}>
             Network Tools
           </div>
-          {TOOLS_NAV.map(({ to, icon: Icon, label }) => (
+          {NETWORK_TOOLS_NAVIGATION.map(({ to, icon: IconComponent, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -157,13 +157,13 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 transition: 'all 0.15s',
               })}
             >
-              <Icon style={{ width: 16, height: 16 }} />
+              <IconComponent style={{ width: 16, height: 16 }} />
               {label}
             </NavLink>
           ))}
         </nav>
 
-        {/* Footer / Sign Out */}
+        {/* Sign Out Section */}
         <div
           style={{
             padding: '16px 12px',
@@ -188,13 +188,13 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               textAlign: 'left',
               transition: 'all 0.15s',
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = '#f87171';
-              e.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.1)';
+            onMouseEnter={(event) => {
+              event.currentTarget.style.color = '#f87171';
+              event.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.1)';
             }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = '#94a3b8';
-              e.currentTarget.style.backgroundColor = 'transparent';
+            onMouseLeave={(event) => {
+              event.currentTarget.style.color = '#94a3b8';
+              event.currentTarget.style.backgroundColor = 'transparent';
             }}
           >
             <LogOut style={{ width: 16, height: 16 }} />
@@ -203,9 +203,9 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       </aside>
 
-      {/* Main area */}
+      {/* Main Content Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Topbar */}
+        {/* Top Navigation Bar */}
         <header
           style={{
             height: 56,
@@ -252,7 +252,7 @@ const UserLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </span>
         </header>
 
-        {/* Content */}
+        {/* Page Content */}
         <main
           style={{
             flex: 1,
