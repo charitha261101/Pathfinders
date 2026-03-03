@@ -158,13 +158,13 @@ class SessionManager:
         """
         t0 = time.perf_counter()
 
-        source_sessions = self.get_active_sessions(source_link)
-        total = len(source_sessions)
+        src_sessions = self.get_active_sessions(source_link)
+        total = len(src_sessions)
         migrated = 0
         dropped = 0
         details: list[dict] = []
 
-        for session in source_sessions:
+        for session in src_sessions:
             try:
                 # Mark as migrating
                 session.state = SessionState.MIGRATING
