@@ -3,24 +3,25 @@
 from pybatfish.client.session import Session
 from pybatfish.datamodel.flow import HeaderConstraints
 
-class BatfishValidator:
+
+class NetworkConfigValidator:
     """
-    Uses Batfish for static network configuration analysis:
-    - Routing loop detection
-    - ACL/firewall policy compliance verification
-    - Reachability analysis without live traffic
-    
-    Batfish analyzes configs statically (no live network needed),
-    making it fast enough for the <5 second validation budget.
+    Leverages Batfish for offline network configuration validation:
+    - Detects routing loops in proposed configurations
+    - Verifies ACL/firewall policies meet compliance requirements
+    - Performs reachability checks without requiring live traffic
+
+    Static analysis via Batfish eliminates live network dependency,
+    keeping validation well within the 5-second processing window.
     """
 
-    def __init__(self, batfish_host: str = "localhost"):
-        self.bf = Session(host=batfish_host)
+    def __init__(self, host_address: str = "localhost"):
+        self._session = Session(host=host_address)
 
-    async def analyze(self, topology: dict, proposed_flows: list[dict]) -> dict:
+    async def run_analysis(self, network_topology: dict, flow_proposals: list[dict]) -> dict:
         """
-        Run Batfish analysis on proposed configuration.
-        
+        Execute Batfish validation against a proposed network configuration.
+
         Returns:
             {
                 "loop_free": bool,
@@ -29,67 +30,74 @@ class BatfishValidator:
                 "violations": Optional[list[str]],
             }
         """
-        # Initialize Batfish snapshot from topology configs
-        self.bf.init_snapshot_from_text(
-            self._topology_to_configs(topology, proposed_flows),
+        # Load topology configs into a Batfish snapshot
+        snapshot_configs = self._build_config_snapshot(network_topology, flow_proposals)
+        self._session.init_snapshot_from_text(
+            snapshot_configs,
             name="validation_snapshot",
             overwrite=True,
         )
-        
-        # Loop detection
-        loop_results = self.bf.q.detectLoops().answer().frame()
-        has_loops = len(loop_results) > 0
-        
-        # ACL/Firewall compliance
-        acl_results = self.bf.q.searchFilters(
+
+        # Check for routing loops
+        loop_frame = self._session.q.detectLoops().answer().frame()
+        loops_detected = len(loop_frame) > 0
+
+        # Evaluate ACL/firewall deny rules
+        filter_frame = self._session.q.searchFilters(
             headers=HeaderConstraints(applications=["dns", "http", "https"]),
             action="deny",
         ).answer().frame()
-        
-        # Check for unintended denies
-        violations = []
-        for _, row in acl_results.iterrows():
-            if row.get("Flow") and "critical" in str(row.get("Flow", "")):
-                violations.append(f"Critical traffic blocked by {row.get('Filter', 'unknown')}")
-        
+
+        # Identify unintended blocks on critical traffic
+        policy_violations = []
+        for _, entry in filter_frame.iterrows():
+            flow_data = entry.get("Flow")
+            filter_name = entry.get("Filter", "unknown")
+            if flow_data and "critical" in str(flow_data):
+                policy_violations.append(f"Critical traffic blocked by {filter_name}")
+
         return {
-            "loop_free": not has_loops,
-            "policy_compliant": len(violations) == 0,
-            "loop_path": str(loop_results.iloc[0]) if has_loops else None,
-            "violations": violations if violations else None,
+            "loop_free": not loops_detected,
+            "policy_compliant": len(policy_violations) == 0,
+            "loop_path": str(loop_frame.iloc[0]) if loops_detected else None,
+            "violations": policy_violations if policy_violations else None,
         }
 
-    def _topology_to_configs(self, topology: dict, flows: list[dict]) -> dict:
-        """Convert abstract topology to vendor-neutral configs for Batfish."""
-        configs = {}
-        for sw in topology.get("switches", []):
-            configs[f"{sw['id']}.cfg"] = self._generate_switch_config(sw, topology, flows)
-        return configs
+    def _build_config_snapshot(self, network_topology: dict, flow_proposals: list[dict]) -> dict:
+        """Transform abstract topology representation into Batfish-compatible vendor-neutral configs."""
+        device_configs = {}
+        for device in network_topology.get("switches", []):
+            config_key = f"{device['id']}.cfg"
+            device_configs[config_key] = self._build_device_config(device, network_topology, flow_proposals)
+        return device_configs
 
-    def _generate_switch_config(self, switch: dict, topology: dict, flows: list[dict]) -> str:
-        """Generate a Cisco-style config for a switch."""
-        config_lines = [
-            f"hostname {switch['id']}",
+    def _build_device_config(self, device: dict, network_topology: dict, flow_proposals: list[dict]) -> str:
+        """Produce a Cisco-style configuration block for a given network device."""
+        cfg_lines = [
+            f"hostname {device['id']}",
             "!",
         ]
 
-        # Generate interface configs from links
-        port_num = 1
-        for link in topology.get("links", []):
-            if link["src"] == switch["id"] or link["dst"] == switch["id"]:
-                config_lines.extend([
-                    f"interface GigabitEthernet0/{port_num}",
-                    f" description {link.get('link_id', f'link-{port_num}')}",
+        # Map topology links to interface definitions
+        iface_index = 1
+        for connection in network_topology.get("links", []):
+            src_match = connection["src"] == device["id"]
+            dst_match = connection["dst"] == device["id"]
+            if src_match or dst_match:
+                link_label = connection.get("link_id", f"link-{iface_index}")
+                cfg_lines.extend([
+                    f"interface GigabitEthernet0/{iface_index}",
+                    f" description {link_label}",
                     " no shutdown",
                     "!",
                 ])
-                port_num += 1
+                iface_index += 1
 
-        # Add basic ACL
-        config_lines.extend([
+        # Append default permissive ACL policy
+        cfg_lines.extend([
             "ip access-list extended PATHWISE-POLICY",
             " permit ip any any",
             "!",
         ])
 
-        return "\n".join(config_lines)
+        return "\n".join(cfg_lines)

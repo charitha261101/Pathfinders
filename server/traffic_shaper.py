@@ -28,15 +28,13 @@ from server import audit
 
 
 # ── App Definitions ────────────────────────────────────────────
-# Each app has: process names, domain patterns (for DNS-based IP resolution),
-# known IP ranges, and a default priority class.
 
 class PriorityClass(str, Enum):
-    CRITICAL = "critical"       # VoIP, video calls — never throttle
-    HIGH = "high"               # Business apps — minimal throttling
-    NORMAL = "normal"           # Default
-    LOW = "low"                 # Streaming, bulk — throttle first
-    BLOCKED = "blocked"         # Fully blocked
+    CRITICAL = "critical"
+    HIGH = "high"
+    NORMAL = "normal"
+    LOW = "low"
+    BLOCKED = "blocked"
 
 
 @dataclass
@@ -44,15 +42,14 @@ class AppProfile:
     """Defines a network application for traffic shaping."""
     name: str
     display_name: str
-    category: str  # voip, video_call, streaming, gaming, business, social, bulk
-    process_names: list[str]  # Windows process names (e.g., ["Zoom.exe"])
-    domains: list[str]        # Domain patterns for IP resolution
-    ip_prefixes: list[str]    # Known IP CIDR ranges
+    category: str
+    process_names: list[str]
+    domains: list[str]
+    ip_prefixes: list[str]
     default_priority: PriorityClass = PriorityClass.NORMAL
-    default_bandwidth_kbps: int = 0  # 0 = unlimited
+    default_bandwidth_kbps: int = 0
 
 
-# Registry of known applications
 APP_REGISTRY: dict[str, AppProfile] = {
     "zoom": AppProfile(
         name="zoom", display_name="Zoom", category="video_call",
@@ -169,7 +166,6 @@ APP_REGISTRY: dict[str, AppProfile] = {
     ),
 }
 
-# Aliases for natural language parsing
 APP_ALIASES: dict[str, str] = {
     "zoom": "zoom", "zoom call": "zoom", "zoom meeting": "zoom",
     "youtube": "youtube", "yt": "youtube", "youtube video": "youtube",
@@ -189,11 +185,11 @@ APP_ALIASES: dict[str, str] = {
 }
 
 BANDWIDTH_PRESETS = {
-    PriorityClass.CRITICAL: 0,           # Unlimited
-    PriorityClass.HIGH: 0,               # Unlimited
-    PriorityClass.NORMAL: 10_000_000,    # 10 Mbps
-    PriorityClass.LOW: 500_000,          # 500 Kbps (forces low quality video)
-    PriorityClass.BLOCKED: 1,            # Effectively blocked
+    PriorityClass.CRITICAL: 0,
+    PriorityClass.HIGH: 0,
+    PriorityClass.NORMAL: 10_000_000,
+    PriorityClass.LOW: 500_000,
+    PriorityClass.BLOCKED: 1,
 }
 
 
@@ -204,130 +200,117 @@ class TrafficPolicy:
     id: str
     app_name: str
     display_name: str
-    action: str          # throttle, prioritize, block, unblock
-    bandwidth_kbps: int  # 0 = unlimited
+    action: str
+    bandwidth_kbps: int
     priority: PriorityClass
     created_at: float
-    created_by: str      # IBN intent ID or "manual"
-    qos_policy_name: str  # Windows QoS policy name
+    created_by: str
+    qos_policy_name: str
     active: bool = True
     reason: str = ""
 
 
-_active_policies: deque[TrafficPolicy] = deque(maxlen=100)
-_policy_counter = 0
+_policy_history: deque[TrafficPolicy] = deque(maxlen=100)
+_rule_counter = 0
 
 
 # ── Resolve App IPs via DNS ────────────────────────────────────
 
-def _resolve_domains(domains: list[str]) -> list[str]:
+def _lookup_domain_ips(domain_list: list[str]) -> list[str]:
     """Resolve domain patterns to IP addresses for QoS targeting."""
-    ips = []
-    for domain in domains:
-        clean = domain.lstrip("*.")
+    resolved = []
+    for entry in domain_list:
+        stripped = entry.lstrip("*.")
         try:
-            results = socket.getaddrinfo(clean, None, socket.AF_INET)
-            for _, _, _, _, (ip, _) in results:
-                if ip not in ips:
-                    ips.append(ip)
+            addr_results = socket.getaddrinfo(stripped, None, socket.AF_INET)
+            for _, _, _, _, (ip_addr, _) in addr_results:
+                if ip_addr not in resolved:
+                    resolved.append(ip_addr)
         except (socket.gaierror, OSError):
             pass
-    return ips
+    return resolved
 
 
 # ── PowerShell Execution (elevated) ───────────────────────────
-#
-# Traffic shaping requires admin. We use two strategies:
-#   1. QoS policies (New-NetQosPolicy) — real bandwidth throttling
-#   2. Firewall rules (New-NetFirewallRule) — block/allow as fallback
-#
-# Both are written to a .ps1 script file and executed via
-# Start-Process -Verb RunAs for elevation. A UAC prompt appears
-# once when the first policy is created.
 
 _SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "infra", "qos_scripts")
 os.makedirs(_SCRIPT_DIR, exist_ok=True)
 
 
-def _run_powershell(command: str, need_admin: bool = True) -> tuple[bool, str]:
+def _execute_powershell(command: str, need_admin: bool = True) -> tuple[bool, str]:
     """
     Execute a PowerShell command. If need_admin=True, writes to a script
     and executes with elevation via Start-Process -Verb RunAs.
     """
     if need_admin:
-        return _run_elevated_powershell(command)
+        return _execute_elevated(command)
 
     try:
-        result = subprocess.run(
+        proc_result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", command],
             capture_output=True, text=True, timeout=10,
         )
-        output = result.stdout.strip() + result.stderr.strip()
-        return result.returncode == 0, output
-    except Exception as e:
-        return False, str(e)
+        combined_out = proc_result.stdout.strip() + proc_result.stderr.strip()
+        return proc_result.returncode == 0, combined_out
+    except Exception as exc:
+        return False, str(exc)
 
 
-def _run_elevated_powershell(command: str) -> tuple[bool, str]:
+def _execute_elevated(command: str) -> tuple[bool, str]:
     """
     Execute PowerShell with admin elevation.
     Writes commands to a .ps1 script, launches it elevated, waits for completion.
     """
-    script_path = os.path.join(_SCRIPT_DIR, f"qos_cmd_{int(time.time()*1000)}.ps1")
-    result_path = script_path + ".result"
+    script_file = os.path.join(_SCRIPT_DIR, f"qos_cmd_{int(time.time()*1000)}.ps1")
+    output_file = script_file + ".result"
 
-    # Write script that executes the command and captures full output
-    result_path_escaped = result_path.replace("\\", "\\\\")
-    script_content = f"""
+    escaped_output = output_file.replace("\\", "\\\\")
+    ps_script = f"""
 $ErrorActionPreference = "Continue"
-$allOutput = @()
+$capturedLines = @()
 try {{
 {command}
-    $allOutput += "OK"
+    $capturedLines += "OK"
 }} catch {{
-    $allOutput += "FAIL"
-    $allOutput += $_.Exception.Message
+    $capturedLines += "FAIL"
+    $capturedLines += $_.Exception.Message
 }}
-$allOutput -join "`n" | Out-File -FilePath "{result_path}" -Encoding UTF8
+$capturedLines -join "`n" | Out-File -FilePath "{escaped_output}" -Encoding UTF8
 """
-    with open(script_path, "w") as f:
-        f.write(script_content)
+    with open(script_file, "w") as fh:
+        fh.write(ps_script)
 
     try:
-        # Launch elevated — this triggers UAC prompt on first run
-        proc = subprocess.run(
+        subprocess.run(
             ["powershell", "-NoProfile", "-Command",
-             f'Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File {script_path}" '
+             f'Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File {script_file}" '
              f'-Verb RunAs -Wait -WindowStyle Hidden'],
             capture_output=True, text=True, timeout=15,
         )
 
-        # Read result
-        if os.path.exists(result_path):
-            with open(result_path, "r", encoding="utf-8-sig") as f:
-                result = f.read().strip()
-            os.remove(result_path)
-            ok = "OK" in result
-            if not ok:
-                print(f"[traffic_shaper] Elevated PS error: {result}")
-            return ok, result
+        if os.path.exists(output_file):
+            with open(output_file, "r", encoding="utf-8-sig") as fh:
+                raw_output = fh.read().strip()
+            os.remove(output_file)
+            succeeded = "OK" in raw_output
+            if not succeeded:
+                print(f"[traffic_shaper] Elevated PS error: {raw_output}")
+            return succeeded, raw_output
         else:
-            # Script ran but no result file — likely UAC was denied
             return False, "UAC denied or script failed"
 
     except subprocess.TimeoutExpired:
         return False, "Elevated command timed out"
-    except Exception as e:
-        return False, str(e)
+    except Exception as exc:
+        return False, str(exc)
     finally:
-        # Cleanup script file
         try:
-            os.remove(script_path)
+            os.remove(script_file)
         except OSError:
             pass
 
 
-def _create_qos_throttle(policy_name: str, app: AppProfile, bandwidth_bps: int) -> bool:
+def _apply_qos_throttle(rule_name: str, app: AppProfile, rate_bps: int) -> bool:
     """
     Create Windows QoS + Firewall rules to throttle an app.
 
@@ -335,89 +318,87 @@ def _create_qos_throttle(policy_name: str, app: AppProfile, bandwidth_bps: int) 
       1. QoS by process name (best for native apps like Zoom.exe, Spotify.exe)
       2. QoS by destination IP prefix (for browser-based apps like YouTube)
       3. QoS by resolved domain IPs (dynamic, catches CDN IPs)
-      4. Firewall rate-limit as fallback (block if bandwidth_bps <= 1000)
+      4. Firewall rate-limit as fallback (block if rate_bps <= 1000)
     """
-    commands = []
+    rule_commands = []
 
     # Collect all target IPs (static ranges + DNS-resolved)
-    all_prefixes = list(app.ip_prefixes[:5])
-    resolved_ips = _resolve_domains(app.domains[:5])
-    for ip in resolved_ips[:8]:
-        all_prefixes.append(f"{ip}/32")
+    combined_prefixes = list(app.ip_prefixes[:5])
+    dns_ips = _lookup_domain_ips(app.domains[:5])
+    for addr in dns_ips[:8]:
+        combined_prefixes.append(f"{addr}/32")
 
-    # Strategy 1: Throttle by process name (unique process apps like Zoom.exe, Spotify.exe)
-    if app.process_names and app.process_names[0] not in ("chrome.exe", "msedge.exe", "firefox.exe"):
-        commands.append(
-            f'New-NetQosPolicy -Name "{policy_name}" '
+    # Strategy 1: Throttle by process name
+    browser_processes = ("chrome.exe", "msedge.exe", "firefox.exe")
+    if app.process_names and app.process_names[0] not in browser_processes:
+        rule_commands.append(
+            f'New-NetQosPolicy -Name "{rule_name}" '
             f'-AppPathNameMatchCondition "{app.process_names[0]}" '
-            f'-ThrottleRateActionBitsPerSecond {bandwidth_bps} '
+            f'-ThrottleRateActionBitsPerSecond {rate_bps} '
             f'-PolicyStore ActiveStore'
         )
 
-    # Strategy 2: Throttle by destination IP (works for browser-based apps)
-    for i, prefix in enumerate(all_prefixes):
-        sub_name = f"{policy_name}-r{i}"
-        commands.append(
-            f'New-NetQosPolicy -Name "{sub_name}" '
-            f'-IPDstPrefixMatchCondition "{prefix}" '
-            f'-ThrottleRateActionBitsPerSecond {bandwidth_bps} '
+    # Strategy 2: Throttle by destination IP prefix
+    for idx, cidr in enumerate(combined_prefixes):
+        sub_rule = f"{rule_name}-r{idx}"
+        rule_commands.append(
+            f'New-NetQosPolicy -Name "{sub_rule}" '
+            f'-IPDstPrefixMatchCondition "{cidr}" '
+            f'-ThrottleRateActionBitsPerSecond {rate_bps} '
             f'-PolicyStore ActiveStore'
         )
 
-    # Strategy 4: Block QUIC/UDP to force TCP (YouTube/Netflix use QUIC
-    # which bypasses QoS). Blocking UDP on port 443 forces fallback to TCP
-    # which IS subject to QoS throttling.
-    all_ips = list(app.ip_prefixes[:5])
-    resolved = _resolve_domains(app.domains[:3])
-    all_ips.extend(f"{ip}/32" for ip in resolved[:5])
-    if all_ips:
-        fw_ips = ",".join(f'"{p}"' for p in all_ips)
-        # Block QUIC (UDP 443) to force TCP — TCP is QoS-throttleable
-        commands.append(
-            f'New-NetFirewallRule -DisplayName "{policy_name}-quic" '
+    # Strategy 3: Block QUIC/UDP to force TCP (YouTube/Netflix use QUIC
+    # which bypasses QoS). Blocking UDP 443 forces fallback to TCP.
+    target_ips = list(app.ip_prefixes[:5])
+    extra_resolved = _lookup_domain_ips(app.domains[:3])
+    target_ips.extend(f"{addr}/32" for addr in extra_resolved[:5])
+    if target_ips:
+        fw_addr_list = ",".join(f'"{p}"' for p in target_ips)
+        rule_commands.append(
+            f'New-NetFirewallRule -DisplayName "{rule_name}-quic" '
             f'-Direction Outbound -Action Block '
             f'-Protocol UDP -RemotePort 443 '
-            f'-RemoteAddress {fw_ips} '
+            f'-RemoteAddress {fw_addr_list} '
             f'-Enabled True'
         )
 
-    # Strategy 5: If effectively blocking (<=1 Kbps), fully block with firewall
-    if bandwidth_bps <= 1000:
-        if all_ips:
-            fw_ips2 = ",".join(f'"{p}"' for p in all_ips)
-            commands.append(
-                f'New-NetFirewallRule -DisplayName "{policy_name}-block" '
+    # Strategy 4: Full block via firewall if rate is effectively zero
+    if rate_bps <= 1000:
+        if target_ips:
+            fw_addr_list2 = ",".join(f'"{p}"' for p in target_ips)
+            rule_commands.append(
+                f'New-NetFirewallRule -DisplayName "{rule_name}-block" '
                 f'-Direction Outbound -Action Block '
-                f'-RemoteAddress {fw_ips2} '
+                f'-RemoteAddress {fw_addr_list2} '
                 f'-Enabled True'
             )
 
-    if not commands:
+    if not rule_commands:
         print(f"[traffic_shaper] No throttle rules generated for {app.name}")
         return False
 
-    # Execute all commands in a single elevated script
-    combined = "\n".join(commands)
-    ok, msg = _run_powershell(combined)
-    if ok:
-        print(f"[traffic_shaper] QoS applied: {len(commands)} rules for {app.display_name} @ {bandwidth_bps/1000:.0f} Kbps")
+    merged_cmd = "\n".join(rule_commands)
+    success, msg = _execute_powershell(merged_cmd)
+    if success:
+        print(f"[traffic_shaper] QoS applied: {len(rule_commands)} rules for {app.display_name} @ {rate_bps/1000:.0f} Kbps")
     else:
         print(f"[traffic_shaper] QoS apply failed for {app.display_name}: {msg}")
-    return ok
+    return success
 
 
-def _remove_qos_policies(policy_name: str) -> bool:
+def _cleanup_qos_rules(rule_name: str) -> bool:
     """Remove all QoS policies and firewall rules matching a name pattern."""
-    cmd = (
+    cleanup_cmd = (
         f'Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | '
-        f'Where-Object {{ $_.Name -like "{policy_name}*" }} | '
+        f'Where-Object {{ $_.Name -like "{rule_name}*" }} | '
         f'Remove-NetQosPolicy -Confirm:$false -ErrorAction SilentlyContinue\n'
         f'Get-NetFirewallRule -ErrorAction SilentlyContinue | '
-        f'Where-Object {{ $_.DisplayName -like "{policy_name}*" }} | '
+        f'Where-Object {{ $_.DisplayName -like "{rule_name}*" }} | '
         f'Remove-NetFirewallRule -ErrorAction SilentlyContinue'
     )
-    ok, _ = _run_powershell(cmd)
-    return ok
+    result, _ = _execute_powershell(cleanup_cmd)
+    return result
 
 
 # ── Public API ─────────────────────────────────────────────────
@@ -427,103 +408,102 @@ def throttle_app(app_name: str, bandwidth_kbps: int = 500, reason: str = "", cre
     Throttle an application to a specified bandwidth.
     bandwidth_kbps=500 forces YouTube/Netflix to drop to 144p/240p.
     """
-    global _policy_counter
-    app = APP_REGISTRY.get(app_name)
-    if not app:
+    global _rule_counter
+    target_app = APP_REGISTRY.get(app_name)
+    if not target_app:
         return None
 
-    _policy_counter += 1
-    policy_name = f"PathWise-{app_name}-{_policy_counter}"
-    bandwidth_bps = bandwidth_kbps * 1000
+    _rule_counter += 1
+    rule_label = f"PathWise-{app_name}-{_rule_counter}"
+    rate_in_bps = bandwidth_kbps * 1000
 
-    _create_qos_throttle(policy_name, app, bandwidth_bps)
+    _apply_qos_throttle(rule_label, target_app, rate_in_bps)
 
-    policy = TrafficPolicy(
+    new_policy = TrafficPolicy(
         id=str(uuid.uuid4())[:8],
         app_name=app_name,
-        display_name=app.display_name,
+        display_name=target_app.display_name,
         action="throttle",
         bandwidth_kbps=bandwidth_kbps,
         priority=PriorityClass.LOW,
         created_at=time.time(),
         created_by=created_by,
-        qos_policy_name=policy_name,
-        reason=reason or f"Throttled {app.display_name} to {bandwidth_kbps} Kbps",
+        qos_policy_name=rule_label,
+        reason=reason or f"Throttled {target_app.display_name} to {bandwidth_kbps} Kbps",
     )
-    _active_policies.append(policy)
+    _policy_history.append(new_policy)
 
     audit.log_event(
         "POLICY_CHANGE", actor="SYSTEM",
         policy_change={"action": "throttle", "app": app_name, "bandwidth_kbps": bandwidth_kbps},
-        details=policy.reason,
+        details=new_policy.reason,
     )
 
-    print(f"[traffic_shaper] Throttled {app.display_name} to {bandwidth_kbps} Kbps")
-    return policy
+    print(f"[traffic_shaper] Throttled {target_app.display_name} to {bandwidth_kbps} Kbps")
+    return new_policy
 
 
 def prioritize_app(app_name: str, reason: str = "", created_by: str = "manual") -> Optional[TrafficPolicy]:
     """Remove any throttle on an app and mark it as prioritized."""
-    global _policy_counter
-    app = APP_REGISTRY.get(app_name)
-    if not app:
+    global _rule_counter
+    target_app = APP_REGISTRY.get(app_name)
+    if not target_app:
         return None
 
-    # Remove any existing throttle for this app
-    for p in _active_policies:
-        if p.app_name == app_name and p.active:
-            _remove_qos_policies(p.qos_policy_name)
-            p.active = False
+    for existing in _policy_history:
+        if existing.app_name == app_name and existing.active:
+            _cleanup_qos_rules(existing.qos_policy_name)
+            existing.active = False
 
-    _policy_counter += 1
-    policy = TrafficPolicy(
+    _rule_counter += 1
+    new_policy = TrafficPolicy(
         id=str(uuid.uuid4())[:8],
         app_name=app_name,
-        display_name=app.display_name,
+        display_name=target_app.display_name,
         action="prioritize",
         bandwidth_kbps=0,
         priority=PriorityClass.CRITICAL,
         created_at=time.time(),
         created_by=created_by,
-        qos_policy_name=f"PathWise-pri-{app_name}-{_policy_counter}",
-        reason=reason or f"Prioritized {app.display_name} — unlimited bandwidth",
+        qos_policy_name=f"PathWise-pri-{app_name}-{_rule_counter}",
+        reason=reason or f"Prioritized {target_app.display_name} — unlimited bandwidth",
     )
-    _active_policies.append(policy)
+    _policy_history.append(new_policy)
 
     audit.log_event(
         "POLICY_CHANGE", actor="SYSTEM",
         policy_change={"action": "prioritize", "app": app_name},
-        details=policy.reason,
+        details=new_policy.reason,
     )
 
-    print(f"[traffic_shaper] Prioritized {app.display_name}")
-    return policy
+    print(f"[traffic_shaper] Prioritized {target_app.display_name}")
+    return new_policy
 
 
 def remove_policy(policy_id: str) -> bool:
     """Remove a traffic policy and restore normal bandwidth."""
-    for p in _active_policies:
-        if p.id == policy_id and p.active:
-            _remove_qos_policies(p.qos_policy_name)
-            p.active = False
+    for entry in _policy_history:
+        if entry.id == policy_id and entry.active:
+            _cleanup_qos_rules(entry.qos_policy_name)
+            entry.active = False
 
             audit.log_event(
                 "POLICY_CHANGE", actor="SYSTEM",
-                policy_change={"action": "remove", "app": p.app_name, "policy_id": p.id},
-                details=f"Removed {p.action} policy on {p.display_name}",
+                policy_change={"action": "remove", "app": entry.app_name, "policy_id": entry.id},
+                details=f"Removed {entry.action} policy on {entry.display_name}",
             )
-            print(f"[traffic_shaper] Removed policy on {p.display_name}")
+            print(f"[traffic_shaper] Removed policy on {entry.display_name}")
             return True
     return False
 
 
 def remove_all_policies():
     """Remove all active traffic shaping policies — full cleanup."""
-    for p in _active_policies:
-        if p.active:
-            p.active = False
-    # Remove ALL PathWise QoS and firewall rules in one elevated call
-    cmd = (
+    for entry in _policy_history:
+        if entry.active:
+            entry.active = False
+
+    global_cleanup = (
         'Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | '
         'Where-Object { $_.Name -like "PathWise-*" } | '
         'Remove-NetQosPolicy -Confirm:$false -ErrorAction SilentlyContinue\n'
@@ -531,7 +511,7 @@ def remove_all_policies():
         'Where-Object { $_.DisplayName -like "PathWise-*" } | '
         'Remove-NetFirewallRule -ErrorAction SilentlyContinue'
     )
-    _run_powershell(cmd)
+    _execute_powershell(global_cleanup)
     print("[traffic_shaper] All QoS policies and firewall rules removed")
 
 
@@ -539,17 +519,16 @@ def prioritize_over(high_app: str, low_app: str, throttle_kbps: int = 500, reaso
     """
     Prioritize one app over another.
     High app gets unlimited bandwidth, low app gets throttled.
-    This is what "Prioritize Zoom over YouTube" does.
     """
-    policies = []
-    p1 = prioritize_app(high_app, reason=reason or f"Prioritized over {low_app}", created_by=created_by)
-    if p1:
-        policies.append(p1)
-    p2 = throttle_app(low_app, bandwidth_kbps=throttle_kbps,
-                       reason=reason or f"Throttled in favor of {high_app}", created_by=created_by)
-    if p2:
-        policies.append(p2)
-    return policies
+    result_policies = []
+    high_policy = prioritize_app(high_app, reason=reason or f"Prioritized over {low_app}", created_by=created_by)
+    if high_policy:
+        result_policies.append(high_policy)
+    low_policy = throttle_app(low_app, bandwidth_kbps=throttle_kbps,
+                               reason=reason or f"Throttled in favor of {high_app}", created_by=created_by)
+    if low_policy:
+        result_policies.append(low_policy)
+    return result_policies
 
 
 # ── Query ──────────────────────────────────────────────────────
@@ -569,7 +548,7 @@ def get_active_policies() -> list[dict]:
             "reason": p.reason,
             "age_seconds": round(time.time() - p.created_at, 1),
         }
-        for p in _active_policies if p.active
+        for p in _policy_history if p.active
     ]
 
 
@@ -587,7 +566,7 @@ def get_all_policies() -> list[dict]:
             "created_at": p.created_at,
             "age_seconds": round(time.time() - p.created_at, 1),
         }
-        for p in _active_policies
+        for p in _policy_history
     ]
 
 
@@ -606,12 +585,10 @@ def get_app_list() -> list[dict]:
 
 def resolve_app_name(text: str) -> Optional[str]:
     """Resolve a natural language app reference to a registry key."""
-    t = text.lower().strip()
-    # Direct match
-    if t in APP_REGISTRY:
-        return t
-    # Alias match
-    for alias, name in sorted(APP_ALIASES.items(), key=lambda x: -len(x[0])):
-        if alias in t:
-            return name
+    normalized = text.lower().strip()
+    if normalized in APP_REGISTRY:
+        return normalized
+    for alias, mapped_name in sorted(APP_ALIASES.items(), key=lambda x: -len(x[0])):
+        if alias in normalized:
+            return mapped_name
     return None
