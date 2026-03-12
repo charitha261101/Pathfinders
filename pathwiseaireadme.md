@@ -307,7 +307,7 @@ PATHWISEAI/
 └── tests/                         Unit + integration tests
 ```
 
-> **Note:** The repository contains both the legacy `services/*` microservice scaffolds (referenced by `docker-compose.yml`) and the consolidated `server/*` monolithic backend that is actively used at runtime. The monolithic server implements every documented feature with a simpler dev experience.
+> **Note:** The repository contains both the legacy `services/*` microservice scaffolds (referenced by `docker-compose.yml`) and the consolidated `server/*` monolithic backend that is actively used at runtime. The monolithic server implements every documented capability with a simpler dev experience.
 
 ---
 
@@ -315,17 +315,17 @@ PATHWISEAI/
 
 ### `server/main.py` — FastAPI entry point
 The unified application entrypoint. Defines:
-- App metadata: `title="PathWise AI -- SD-WAN Management Platform"`, `version="2.0.0"`
+- App metadata: `title="PathWise AI -- SD-WAN Orchestration Solution"`, `version="2.0.0"`
 - CORS middleware (`allow_origins=["*"]` for development)
 - Async **lifespan** that spawns four background tasks:
   1. `simulation_loop()` — telemetry generation (sim/live/hybrid)
   2. `prediction_loop()` — LSTM inference at 1 Hz
   3. `scoreboard_broadcast_loop()` — WebSocket fan-out at 1 Hz
-  4. `ibn_monitor_loop()` — intent compliance checking
+  4. `ibn_monitor_loop()` — intent conformance checking
 - 40+ REST endpoints organized by feature area
 - A `/ws/scoreboard` WebSocket endpoint
 - Pydantic models for every request body (`LoginRequest`, `RegisterRequest`, `LSTMToggleRequest`, `SandboxValidationRequest`, `ApplyRuleRequest`, `IntentRequest`, `AlertConfigRequest`, `TrafficShapeRequest`, `PrioritizeOverRequest`, etc.)
-- Automatic shutdown cleanup that removes all OS-level traffic shaping policies
+- Automatic shutdown cleanup that removes all OS-level traffic conditioning policies
 
 ### `server/lstm_engine.py` — Prediction service
 - Loads trained checkpoint from `ml/checkpoints/best_model.pt` on startup
@@ -336,7 +336,7 @@ The unified application entrypoint. Defines:
 - Falls back to a heuristic predictor if PyTorch is unavailable
 - Inference latency stays well under the 1 Hz polling cycle (Req-Func-Sw-2)
 
-### `server/sandbox.py` — Digital twin validator
+### `server/sandbox.py` — Virtual twin validator
 - Implements an **in-memory** replacement for Mininet + Batfish for fast iteration
 - Defines a **reference topology** with hosts, switches, and four WAN paths (each with realistic intermediary hops: ISP PoP, IX, cable modem, DSLAM, ground stations, GEO satellite, gNodeB, 5G core UPF)
 - Defines per-traffic-class requirements:
@@ -346,7 +346,7 @@ The unified application entrypoint. Defines:
   | `video` | 100 ms | 20 ms | 1.0% | 10 Mbps |
   | `critical` | 80 ms | 15 ms | 0.3% | 5 Mbps |
   | `bulk` | 500 ms | 100 ms | 5.0% | 1 Mbps |
-- Runs 5 checks: topology snapshot, loop detection (DFS cycle), policy compliance (class ↔ link), reachability (path metrics), performance impact
+- Runs 5 checks: topology snapshot, loop detection (DFS cycle), policy conformance (class ↔ link), reachability (path metrics), performance impact
 - Produces a `SandboxReport` with per-check status (pass/warn/fail), execution timing, and JSON details
 - Records every report in `_sandbox_history` (deque)
 
@@ -363,7 +363,7 @@ The unified application entrypoint. Defines:
   - **Traffic aliases:** `voice/sip/phone/calls → voip`, `streaming/conferencing/zoom/teams → video`, `business/erp/database/medical → critical`, `bulk/backup/transfer/ftp → bulk`
   - **Metric aliases:** `delay/lag → latency_ms`, `variation → jitter_ms`, `loss/drop → packet_loss_pct`, `throughput/speed/mbps → bandwidth_util_pct`
 - Generates **YANG/NETCONF** payloads from parsed intents
-- Background `ibn_monitor_loop()` continuously checks compliance and triggers auto-steering on violation
+- Background `ibn_monitor_loop()` continuously checks conformance and triggers auto-steering on violation
 
 ### `server/state.py` — Central state store
 - All state is held in **in-memory Python deques and dicts** for offline operation (no Redis/TimescaleDB required for standalone mode)
