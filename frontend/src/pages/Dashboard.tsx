@@ -170,13 +170,13 @@ const Dashboard: React.FC = () => {
                 <XAxis dataKey="t" hide />
                 <YAxis
                   domain={["auto", "auto"]}
-                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  tick={{ fill: "#64748b", fontSize: 10 }}
                   width={40}
                 />
                 <Tooltip
                   contentStyle={{
-                    background: "#1a2035",
-                    border: "1px solid #1f2a40",
+                    background: "#ffffff",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "8px",
                     fontSize: 11,
                   }}
@@ -371,7 +371,7 @@ function HealthCard({
               cy="24"
               r="20"
               fill="none"
-              stroke="#1f2a40"
+              stroke="#e2e8f0"
               strokeWidth="3"
             />
             <circle

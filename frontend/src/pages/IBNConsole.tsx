@@ -416,7 +416,7 @@ const IBNConsole: React.FC = () => {
                       exit={{ height: 0, opacity: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="mt-3 ml-9 p-3 rounded-xl bg-[#0a0e1a] border border-pw-border font-mono text-[11px] text-emerald-300/80 whitespace-pre overflow-x-auto">
+                      <div className="mt-3 ml-9 p-3 rounded-xl bg-[#f8fafc] border border-pw-border font-mono text-[11px] text-emerald-300/80 whitespace-pre overflow-x-auto">
                         {intent.yang_config}
                       </div>
                     </motion.div>
