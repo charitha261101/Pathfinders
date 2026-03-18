@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "description": "PathWise AI — Ultrarealistic SD-WAN Management Dashboard",
+  "type":"module",
   "scripts": {
     "start": "vite",
     "build": "vite build",

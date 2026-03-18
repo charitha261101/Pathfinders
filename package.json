@@ -1,0 +1,29 @@
+{
+  "name": "pathwiseai",
+  "version": "1.0.0",
+  "description": "**AI-Powered SD-WAN Management Platform** Team Pathfinders | COSC6370-001 Advanced Software Engineering | Spring 2026",
+  "main": "index.js",
+  "type": "commonjs",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vineethkodakandla/PATHWISEAI.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vineethkodakandla/PATHWISEAI/issues"
+  },
+  "homepage": "https://github.com/vineethkodakandla/PATHWISEAI#readme",
+  "dependencies": {
+    "jsonfile": "^6.2.1",
+    "moment": "^2.30.1"
+  }
+}
