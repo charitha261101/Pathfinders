@@ -1,0 +1,1 @@
+timestamp,link_id,latency_ms,jitter_ms,packet_loss_pct,bandwidth_util_pct,rtt_ms
