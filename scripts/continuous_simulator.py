@@ -18,17 +18,17 @@ SITE_LINKS = {
     "site-user-001-2": ["5g", "broadband"],
     "site-user-002-1": ["fiber", "satellite", "5g"],
     "site-user-002-2": ["fiber", "broadband"],
-    "site-user-002-3": ["broadband", "5g"],
+    "site-user-002-3": ["5g", "5g"],
     "site-user-003-1": ["fiber", "broadband"],
-    "site-user-003-2": ["broadband", "5g"],
+    "site-user-003-2": ["5g", "5g"],
     "site-user-003-3": ["fiber", "satellite"],
     "site-user-004-1": ["fiber", "broadband", "5g"],
-    "site-user-004-2": ["broadband", "satellite"],
+    "site-user-004-2": ["5g", "satellite"],
     "site-user-005-1": ["fiber", "broadband"],
     "site-user-005-2": ["fiber", "5g"],
     "site-user-006-1": ["fiber", "broadband", "satellite"],
     "site-user-006-2": ["fiber", "5g"],
-    "site-user-007-1": ["broadband", "satellite"],
+    "site-user-007-1": ["5g", "satellite"],
     "site-user-007-2": ["fiber", "broadband"],
     "site-user-008-1": ["fiber", "5g"],
     "site-user-008-2": ["fiber", "broadband"],
@@ -36,10 +36,10 @@ SITE_LINKS = {
 
 # Per-link baseline characteristics
 LINK_BASELINES = {
-    "fiber":     {"latency": 8,   "jitter": 1.2, "loss": 0.01, "bw": 1000},
-    "broadband": {"latency": 22,  "jitter": 3.5, "loss": 0.05, "bw": 300},
-    "satellite": {"latency": 590, "jitter": 40,  "loss": 0.3,  "bw": 50},
-    "5g":        {"latency": 12,  "jitter": 2.0, "loss": 0.02, "bw": 500},
+    "fiber":     {"latency": 5,   "jitter": 0.5, "loss": 0.005, "bw": 2000},
+    "broadband": {"latency": 15,  "jitter": 2.0, "loss": 0.03, "bw": 400},
+    "satellite": {"latency": 500, "jitter": 30,  "loss": 0.2,  "bw": 100},
+    "5g":        {"latency": 8,  "jitter": 1.0, "loss": 0.01, "bw": 1000},
 }
 
 def _gen_metric(base: float, noise_pct: float = 0.15,
