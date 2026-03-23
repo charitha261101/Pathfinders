@@ -41,7 +41,7 @@ class SessionState(str, Enum):
 
 @dataclass
 class NetworkSession:
-    """Represents an active network session traversing a WAN link."""
+    """Represents an active network session switching to a WAN link."""
     id: str
     session_type: SessionType
     link_id: str
@@ -146,6 +146,15 @@ class SessionManager:
         This is the core of Req-Func-Sw-7.
 
         Returns a HandoffResult with counts and timing.
+        """
+        """
+        t0 = time.perf_counter()
+
+        source_sessions = self.get_active_sessions(source_link)
+        total = len(source_sessions)
+        migrated = 0
+        dropped = 0
+        details: list[] = []
         """
         t0 = time.perf_counter()
 

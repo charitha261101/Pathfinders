@@ -101,8 +101,8 @@ class ValidationCheck:
 class SandboxReport:
     id: str
     result: ValidationResult
-    source_link: str
-    target_link: str
+    source_lnk: str
+    target_lnk: str
     traffic_classes: list[str]
     loop_free: bool
     policy_compliant: bool
@@ -115,8 +115,8 @@ class SandboxReport:
 
 
 async def validate_steering(
-    source_link: str,
-    target_link: str,
+    source_lnk: str,
+    target_lnk: str,
     traffic_classes: list[str],
 ) -> SandboxReport:
     """
@@ -129,10 +129,10 @@ async def validate_steering(
 
     # Validate inputs
     valid_links = {l["link_id"] for l in TOPOLOGY["links"]}
-    if source_link not in valid_links or target_link not in valid_links:
+    if source_lnk not in valid_links or target_lnk not in valid_links:
         return SandboxReport(
             id=report_id, result=ValidationResult.FAIL_UNREACHABLE,
-            source_link=source_link, target_link=target_link,
+            source_link=source_lnk, target_link=target_lnk,
             traffic_classes=traffic_classes,
             loop_free=False, policy_compliant=False,
             reachability_verified=False, performance_acceptable=False,
@@ -145,9 +145,9 @@ async def validate_steering(
     t0 = time.monotonic()
     await asyncio.sleep(random.uniform(0.05, 0.15))
     n_intermediaries = len(TOPOLOGY.get("intermediaries", []))
-    tgt_link_spec = next((l for l in TOPOLOGY["links"] if l["link_id"] == target_link), None)
+    tgt_link_spec = next((l for l in TOPOLOGY["links"] if l["link_id"] == target_lnk), None)
     tgt_hops = tgt_link_spec.get("hops", []) if tgt_link_spec else []
-    hop_str = " → ".join(tgt_hops) if tgt_hops else f"s1 → {target_link} → s2"
+    hop_str = " → ".join(tgt_hops) if tgt_hops else f"s1 → {target_lnk} → s2"
     checks.append(ValidationCheck(
         name="topology_snapshot",
         status="pass",
@@ -160,24 +160,24 @@ async def validate_steering(
     # ── Check 2: Loop Detection ─────────────────────────────
     t0 = time.monotonic()
     await asyncio.sleep(random.uniform(0.08, 0.2))
-    loop_free = _check_no_loops(source_link, target_link)
+    loop_free = _check_no_loops(source_lnk, target_lnk)
     checks.append(ValidationCheck(
         name="loop_detection",
         status="pass" if loop_free else "fail",
         detail="No routing loops detected in proposed configuration"
-               if loop_free else f"Loop detected: {source_link} → {target_link} → {source_link}",
+               if loop_free else f"Loop detected: {source_lnk} → {target_lnk} → {source_lnk}",
         duration_ms=(time.monotonic() - t0) * 1000,
     ))
     if not loop_free:
         return _build_report(
-            report_id, ValidationResult.FAIL_LOOP, source_link, target_link,
+            report_id, ValidationResult.FAIL_LOOP, source_lnk, target_lnk,
             traffic_classes, loop_free, False, False, False, checks, start,
         )
 
     # ── Check 3: Policy Compliance ──────────────────────────
     t0 = time.monotonic()
     await asyncio.sleep(random.uniform(0.1, 0.25))
-    policy_result = _check_policy_compliance(target_link, traffic_classes)
+    policy_result = _check_policy_compliance(target_lnk, traffic_classes)
     checks.append(ValidationCheck(
         name="policy_compliance",
         status=policy_result["status"],
@@ -187,15 +187,15 @@ async def validate_steering(
     policy_ok = policy_result["status"] != "fail"
     if not policy_ok:
         return _build_report(
-            report_id, ValidationResult.FAIL_POLICY, source_link, target_link,
+            report_id, ValidationResult.FAIL_POLICY, source_lnk, target_lnk,
             traffic_classes, loop_free, False, False, False, checks, start,
         )
 
     # ── Check 4: Reachability Test ──────────────────────────
     t0 = time.monotonic()
     await asyncio.sleep(random.uniform(0.15, 0.35))
-    reachable = _check_reachability(target_link)
-    reach_path = f"h1 → {hop_str} → h2" if tgt_hops else f"h1 → s1 → [{target_link}] → s2 → h2"
+    reachable = _check_reachability(target_lnk)
+    reach_path = f"h1 → {hop_str} → h2" if tgt_hops else f"h1 → s1 → [{target_lnk}] → s2 → h2"
     n_hops = len(tgt_hops) if tgt_hops else 2
     checks.append(ValidationCheck(
         name="reachability_test",
@@ -207,14 +207,14 @@ async def validate_steering(
     ))
     if not reachable:
         return _build_report(
-            report_id, ValidationResult.FAIL_UNREACHABLE, source_link, target_link,
+            report_id, ValidationResult.FAIL_UNREACHABLE, source_lnk, target_lnk,
             traffic_classes, loop_free, policy_ok, False, False, checks, start,
         )
 
     # ── Check 5: Performance Impact ─────────────────────────
     t0 = time.monotonic()
     await asyncio.sleep(random.uniform(0.1, 0.2))
-    perf_result = _check_performance_impact(source_link, target_link, traffic_classes)
+    perf_result = _check_performance_impact(source_lnk, target_lnk, traffic_classes)
     checks.append(ValidationCheck(
         name="performance_impact",
         status=perf_result["status"],
@@ -225,7 +225,7 @@ async def validate_steering(
 
     overall = ValidationResult.PASS if perf_ok else ValidationResult.FAIL_PERFORMANCE
     return _build_report(
-        report_id, overall, source_link, target_link, traffic_classes,
+        report_id, overall, source_lnk, target_lnk, traffic_classes,
         loop_free, policy_ok, reachable, perf_ok, checks, start,
     )
 
