@@ -2,17 +2,21 @@
 Train the PathWiseLSTM model on synthetic telemetry data.
 
 Reads parquet files, engineers 13 features, creates sliding windows
-(60-step input → 30-step forecast target), trains, and saves checkpoint.
+(60-step input -> 30-step forecast target), trains, and saves checkpoint.
 """
 
+from __future__ import annotations
+
+import random
 import sys
 import time
 from pathlib import Path
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -21,49 +25,84 @@ sys.path.insert(0, str(PROJECT_ROOT / "services" / "prediction-engine"))
 from model.lstm_network import PathWiseLSTM, PathWiseLoss
 
 
-# ── Feature Engineering ──────────────────────────────────────
+# Hyperparameters / config
+INPUT_LEN       = 60
+HORIZON         = 30
+WINDOW_STRIDE   = 30
+ROLLING_WINDOW  = 30
+EMA_ALPHA       = 0.3
 
-def rolling_mean(arr: np.ndarray, w: int = 30) -> np.ndarray:
-    s = pd.Series(arr)
-    return s.rolling(w, min_periods=1).mean().values.astype(np.float32)
+INPUT_FEATURES  = 13
+HIDDEN_SIZE     = 128
+NUM_LAYERS      = 2
+DROPOUT         = 0.2
+
+BATCH_SIZE      = 512
+LEARNING_RATE   = 1e-3
+MAX_EPOCHS      = 10
+EARLY_STOP_PATIENCE = 5
+LR_PATIENCE     = 3
+GRADIENT_CLIP   = 1.0
+VAL_FRACTION    = 0.10
+MIN_VAL_SAMPLES = 1000
+SEED            = 42
+
+LOSS_WEIGHTS    = {"latency": 1.0, "jitter": 1.0, "packet_loss": 2.0}
+UNDERESTIMATE_PENALTY = 2.0
+
+DATA_DIR        = PROJECT_ROOT / "ml" / "data" / "synthetic"
+CHECKPOINT_DIR  = PROJECT_ROOT / "ml" / "checkpoints"
 
 
-def rolling_std(arr: np.ndarray, w: int = 30) -> np.ndarray:
-    s = pd.Series(arr)
-    return s.rolling(w, min_periods=1).std().fillna(0).values.astype(np.float32)
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 
-def ema(arr: np.ndarray, alpha: float = 0.3) -> np.ndarray:
-    s = pd.Series(arr)
-    return s.ewm(alpha=alpha, adjust=False).mean().values.astype(np.float32)
+# Feature Engineering
+
+def rolling_mean(values, window=ROLLING_WINDOW):
+    series = pd.Series(values)
+    return series.rolling(window, min_periods=1).mean().values.astype(np.float32)
 
 
-def build_features(df: pd.DataFrame) -> np.ndarray:
+def rolling_std(values, window=ROLLING_WINDOW):
+    series = pd.Series(values)
+    return series.rolling(window, min_periods=1).std().fillna(0).values.astype(np.float32)
+
+
+def ema(values, alpha=EMA_ALPHA):
+    series = pd.Series(values)
+    return series.ewm(alpha=alpha, adjust=False).mean().values.astype(np.float32)
+
+
+def build_features(telemetry_df):
     """Build 13 features from raw 5-column telemetry DataFrame."""
-    lat = df["latency_ms"].values.astype(np.float32)
-    jit = df["jitter_ms"].values.astype(np.float32)
-    pkt = df["packet_loss_pct"].values.astype(np.float32)
-    bw = df["bandwidth_util_pct"].values.astype(np.float32)
-    rtt = df["rtt_ms"].values.astype(np.float32)
+    latency        = telemetry_df["latency_ms"].values.astype(np.float32)
+    jitter         = telemetry_df["jitter_ms"].values.astype(np.float32)
+    packet_loss    = telemetry_df["packet_loss_pct"].values.astype(np.float32)
+    bandwidth_util = telemetry_df["bandwidth_util_pct"].values.astype(np.float32)
+    rtt            = telemetry_df["rtt_ms"].values.astype(np.float32)
 
-    features = np.column_stack([
-        lat, jit, pkt, bw, rtt,                         # 1-5: raw
-        rolling_mean(lat), rolling_std(lat),             # 6-7: latency stats
-        rolling_mean(jit),                               # 8: jitter smoothed
-        ema(lat), ema(pkt),                              # 9-10: EMAs
-        np.diff(lat, prepend=lat[0]),                    # 11: delta latency
-        np.diff(jit, prepend=jit[0]),                    # 12: delta jitter
-        np.diff(pkt, prepend=pkt[0]),                    # 13: delta loss
+    feature_matrix = np.column_stack([
+        latency, jitter, packet_loss, bandwidth_util, rtt,
+        rolling_mean(latency), rolling_std(latency),
+        rolling_mean(jitter),
+        ema(latency), ema(packet_loss),
+        np.diff(latency, prepend=latency[0]),
+        np.diff(jitter, prepend=jitter[0]),
+        np.diff(packet_loss, prepend=packet_loss[0]),
     ])
-    return features
+    return feature_matrix
 
 
-# ── Dataset ──────────────────────────────────────────────────
+# Dataset
 
 class TelemetryDataset(Dataset):
-    """Sliding window dataset: 60 input steps → 30 target steps, with stride."""
+    """Sliding window dataset: INPUT_LEN steps -> HORIZON target steps."""
 
-    def __init__(self, features: np.ndarray, input_len: int = 60, horizon: int = 30, stride: int = 30):
+    def __init__(self, features, input_len=INPUT_LEN, horizon=HORIZON, stride=WINDOW_STRIDE):
         self.features = torch.tensor(features, dtype=torch.float32)
         self.input_len = input_len
         self.horizon = horizon
@@ -74,129 +113,164 @@ class TelemetryDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        i = self.indices[idx]
-        x = self.features[i: i + self.input_len]
-        y = self.features[i + self.input_len: i + self.input_len + self.horizon, :3]
+        start = self.indices[idx]
+        x = self.features[start: start + self.input_len]
+        y = self.features[start + self.input_len: start + self.input_len + self.horizon, :3]
         return x, y
 
 
-# ── Training ─────────────────────────────────────────────────
+# Pipeline stages
 
-def train():
-    data_dir = PROJECT_ROOT / "ml" / "data" / "synthetic"
-    ckpt_dir = PROJECT_ROOT / "ml" / "checkpoints"
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-
+def load_link_features(data_dir):
     parquet_files = sorted(data_dir.glob("*.parquet"))
     if not parquet_files:
-        print("ERROR: No parquet files found. Run generate_synthetic_data.py first.")
-        return
+        raise FileNotFoundError(
+            f"No parquet files found in {data_dir}. Run generate_synthetic_data.py first."
+        )
 
-    # Load and combine all links
     print(f"Loading data from {len(parquet_files)} files...")
-    all_features = []
-    for f in parquet_files:
-        df = pd.read_parquet(f)
-        print(f"  {f.stem}: {len(df):,} rows ... ", end="", flush=True)
-        t = time.time()
-        feats = build_features(df)
-        print(f"features built in {time.time()-t:.1f}s")
-        all_features.append(feats)
+    per_link_features = []
+    for parquet_path in parquet_files:
+        telemetry_df = pd.read_parquet(parquet_path)
+        print(f"  {parquet_path.stem}: {len(telemetry_df):,} rows ... ", end="", flush=True)
+        start = time.time()
+        per_link_features.append(build_features(telemetry_df))
+        print(f"features built in {time.time() - start:.1f}s")
+    return per_link_features
 
-    # Normalize features per-column across all data
-    combined = np.vstack(all_features)
+
+def compute_norm_stats(per_link_features):
+    combined = np.vstack(per_link_features)
     means = combined.mean(axis=0)
     stds = combined.std(axis=0) + 1e-8
     print(f"Total data points: {len(combined):,}")
+    return means, stds
 
-    # Create datasets per link, then combine
-    datasets = []
-    for feats in all_features:
-        normed = (feats - means) / stds
-        ds = TelemetryDataset(normed)
-        datasets.append(ds)
-    full_dataset = torch.utils.data.ConcatDataset(datasets)
 
-    # Train/validation split (90/10)
+def build_dataset(per_link_features, means, stds):
+    per_link_datasets = [TelemetryDataset((feats - means) / stds) for feats in per_link_features]
+    return ConcatDataset(per_link_datasets)
+
+
+def split_train_val(full_dataset):
     n_total = len(full_dataset)
-    n_val = max(1000, n_total // 10)
+    n_val = max(MIN_VAL_SAMPLES, int(n_total * VAL_FRACTION))
     n_train = n_total - n_val
-    train_ds, val_ds = torch.utils.data.random_split(full_dataset, [n_train, n_val])
     print(f"Train samples: {n_train:,} | Validation samples: {n_val:,}")
+    return random_split(
+        full_dataset, [n_train, n_val],
+        generator=torch.Generator().manual_seed(SEED),
+    )
 
-    train_loader = DataLoader(train_ds, batch_size=512, shuffle=True, num_workers=0, pin_memory=False)
-    val_loader = DataLoader(val_ds, batch_size=512, shuffle=False, num_workers=0)
 
-    # Model
-    model = PathWiseLSTM(input_size=13, hidden_size=128, num_layers=2, dropout=0.2, horizon=30)
-    criterion = PathWiseLoss(weights={"latency": 1.0, "jitter": 1.0, "packet_loss": 2.0}, underestimate_penalty=2.0)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+def build_model_and_optim():
+    model = PathWiseLSTM(
+        input_size=INPUT_FEATURES,
+        hidden_size=HIDDEN_SIZE,
+        num_layers=NUM_LAYERS,
+        dropout=DROPOUT,
+        horizon=HORIZON,
+    )
+    criterion = PathWiseLoss(weights=LOSS_WEIGHTS, underestimate_penalty=UNDERESTIMATE_PENALTY)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=LR_PATIENCE, factor=0.5)
+    return model, criterion, optimizer, scheduler
 
+
+def run_one_epoch(model, loader, criterion, optimizer=None):
+    """One pass over loader. If optimizer given, train; else validate."""
+    is_training = optimizer is not None
+    model.train(is_training)
+
+    total_loss = 0.0
+    n_batches = 0
+
+    context = torch.enable_grad() if is_training else torch.no_grad()
+    with context:
+        for x_batch, y_batch in loader:
+            if is_training:
+                optimizer.zero_grad()
+            preds, _confidence = model(x_batch)
+            loss = criterion(preds, y_batch)
+            if is_training:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), GRADIENT_CLIP)
+                optimizer.step()
+            total_loss += loss.item()
+            n_batches += 1
+
+    return total_loss / max(n_batches, 1)
+
+
+def save_checkpoint(model, optimizer, epoch, val_loss, means, stds, path):
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "epoch": epoch,
+            "val_loss": val_loss,
+            "means": means.tolist(),
+            "stds": stds.tolist(),
+        },
+        path,
+    )
+
+
+def train():
+    set_seed(SEED)
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    per_link_features = load_link_features(DATA_DIR)
+    means, stds = compute_norm_stats(per_link_features)
+
+    full_dataset = build_dataset(per_link_features, means, stds)
+    train_ds, val_ds = split_train_val(full_dataset)
+
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=False)
+    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+
+    model, criterion, optimizer, scheduler = build_model_and_optim()
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {n_params:,}")
-    print(f"Training on CPU...")
+    print("Training on CPU...")
     print("-" * 60)
 
     best_val_loss = float("inf")
-    epochs = 10
+    epochs_no_improve = 0
+    checkpoint_path = CHECKPOINT_DIR / "best_model.pt"
 
-    for epoch in range(1, epochs + 1):
-        t0 = time.time()
+    for epoch in range(1, MAX_EPOCHS + 1):
+        epoch_start = time.time()
 
-        # Train
-        model.train()
-        train_loss = 0.0
-        n_batches = 0
-        for x_batch, y_batch in train_loader:
-            optimizer.zero_grad()
-            preds, confidence = model(x_batch)
-            loss = criterion(preds, y_batch)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            train_loss += loss.item()
-            n_batches += 1
+        avg_train_loss = run_one_epoch(model, train_loader, criterion, optimizer)
+        avg_val_loss = run_one_epoch(model, val_loader, criterion, optimizer=None)
+        scheduler.step(avg_val_loss)
 
-        avg_train = train_loss / max(n_batches, 1)
-
-        # Validate
-        model.eval()
-        val_loss = 0.0
-        n_val_batches = 0
-        with torch.no_grad():
-            for x_batch, y_batch in val_loader:
-                preds, confidence = model(x_batch)
-                loss = criterion(preds, y_batch)
-                val_loss += loss.item()
-                n_val_batches += 1
-
-        avg_val = val_loss / max(n_val_batches, 1)
-        scheduler.step(avg_val)
-
-        elapsed = time.time() - t0
-        lr = optimizer.param_groups[0]["lr"]
+        elapsed = time.time() - epoch_start
+        current_lr = optimizer.param_groups[0]["lr"]
         marker = ""
 
-        if avg_val < best_val_loss:
-            best_val_loss = avg_val
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            epochs_no_improve = 0
             marker = " * BEST"
-            torch.save({
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "epoch": epoch,
-                "val_loss": avg_val,
-                "means": means.tolist(),
-                "stds": stds.tolist(),
-            }, ckpt_dir / "best_model.pt")
+            save_checkpoint(model, optimizer, epoch, avg_val_loss, means, stds, checkpoint_path)
+        else:
+            epochs_no_improve += 1
 
-        print(f"Epoch {epoch:2d}/{epochs} | "
-              f"Train: {avg_train:.4f} | Val: {avg_val:.4f} | "
-              f"LR: {lr:.1e} | {elapsed:.1f}s{marker}")
+        print(
+            f"Epoch {epoch:2d}/{MAX_EPOCHS} | "
+            f"Train: {avg_train_loss:.4f} | Val: {avg_val_loss:.4f} | "
+            f"LR: {current_lr:.1e} | {elapsed:.1f}s{marker}"
+        )
+
+        if epochs_no_improve >= EARLY_STOP_PATIENCE:
+            print(f"Early stopping at epoch {epoch} (no improvement for {EARLY_STOP_PATIENCE} epochs)")
+            break
 
     print("-" * 60)
     print(f"Training complete. Best val loss: {best_val_loss:.4f}")
-    print(f"Checkpoint saved to: {ckpt_dir / 'best_model.pt'}")
+    print(f"Checkpoint saved to: {checkpoint_path}")
 
 
 if __name__ == "__main__":
