@@ -55,11 +55,11 @@ const AppQoSOverview: React.FC = () => {
         }}
       >
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+          <div style={{ padding: 40, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
             Loading...
           </div>
         ) : data.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+          <div style={{ padding: 40, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
             No active app priority rules
           </div>
         ) : (

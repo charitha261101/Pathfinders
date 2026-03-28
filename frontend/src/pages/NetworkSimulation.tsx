@@ -369,7 +369,7 @@ function IntermediateNode({
       {shape === "diamond" && (
         <polygon
           points={`${x},${y - sz} ${x + sz},${y} ${x},${y + sz} ${x - sz},${y}`}
-          fill="#0f172a"
+          fill="#ffffff"
           stroke={color}
           strokeWidth="1.5"
         />
@@ -377,7 +377,7 @@ function IntermediateNode({
       {shape === "hexagon" && (
         <polygon
           points={`${x - sz},${y} ${x - sz / 2},${y - sz} ${x + sz / 2},${y - sz} ${x + sz},${y} ${x + sz / 2},${y + sz} ${x - sz / 2},${y + sz}`}
-          fill="#0f172a"
+          fill="#ffffff"
           stroke={color}
           strokeWidth="1.5"
         />
@@ -389,13 +389,13 @@ function IntermediateNode({
           width={sz * 2}
           height={sz * 2 - 2}
           rx="3"
-          fill="#0f172a"
+          fill="#ffffff"
           stroke={color}
           strokeWidth="1.5"
         />
       )}
       {shape === "circle" && (
-        <circle cx={x} cy={y} r={sz} fill="#0f172a" stroke={color} strokeWidth="1.5" />
+        <circle cx={x} cy={y} r={sz} fill="#ffffff" stroke={color} strokeWidth="1.5" />
       )}
       <text x={x} y={y + sz + 11} textAnchor="middle" fill={color} fontSize="7" fontWeight="500">{label}</text>
     </g>
@@ -442,7 +442,7 @@ function TopologyView({
       <svg viewBox="0 0 950 380" className="w-full" style={{ maxHeight: 400 }}>
         <defs>
           <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1f2a40" strokeWidth="0.3" />
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" strokeWidth="0.3" />
           </pattern>
           <filter id="glow-green">
             <feGaussianBlur stdDeviation="3" result="blur" />
@@ -463,32 +463,32 @@ function TopologyView({
 
         {/* ─── Host H1 ─── */}
         <g filter="url(#node-shadow)">
-          <circle cx="50" cy="190" r="24" fill="#1a2035" stroke="#818cf8" strokeWidth="1.5" />
-          <text x="50" y="186" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="700">H1</text>
-          <text x="50" y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Site A (HQ)</text>
+          <circle cx="50" cy="190" r="24" fill="#ffffff" stroke="#818cf8" strokeWidth="1.5" />
+          <text x="50" y="186" textAnchor="middle" fill="#0f172a" fontSize="11" fontWeight="700">H1</text>
+          <text x="50" y="198" textAnchor="middle" fill="#64748b" fontSize="7">Site A (HQ)</text>
         </g>
-        <line x1="74" y1="190" x2="115" y2="190" stroke="#4b5563" strokeWidth="1.5" strokeDasharray="4 2" />
+        <line x1="74" y1="190" x2="115" y2="190" stroke="#e2e8f0" strokeWidth="1.5" strokeDasharray="4 2" />
 
         {/* ─── Switch 1 ─── */}
         <g filter="url(#node-shadow)">
-          <rect x="115" y="164" width="55" height="52" rx="10" fill="#1a2035" stroke="#6366f1" strokeWidth="2" />
-          <text x={S1_X} y="186" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="700">S1</text>
-          <text x={S1_X} y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Edge Rtr</text>
+          <rect x="115" y="164" width="55" height="52" rx="10" fill="#ffffff" stroke="#6366f1" strokeWidth="2" />
+          <text x={S1_X} y="186" textAnchor="middle" fill="#0f172a" fontSize="10" fontWeight="700">S1</text>
+          <text x={S1_X} y="198" textAnchor="middle" fill="#64748b" fontSize="7">Edge Rtr</text>
         </g>
 
         {/* ─── Switch 2 ─── */}
         <g filter="url(#node-shadow)">
-          <rect x="785" y="164" width="55" height="52" rx="10" fill="#1a2035" stroke="#6366f1" strokeWidth="2" />
-          <text x={S2_X} y="186" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="700">S2</text>
-          <text x={S2_X} y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Edge Rtr</text>
+          <rect x="785" y="164" width="55" height="52" rx="10" fill="#ffffff" stroke="#6366f1" strokeWidth="2" />
+          <text x={S2_X} y="186" textAnchor="middle" fill="#0f172a" fontSize="10" fontWeight="700">S2</text>
+          <text x={S2_X} y="198" textAnchor="middle" fill="#64748b" fontSize="7">Edge Rtr</text>
         </g>
 
         {/* ─── Host H2 ─── */}
-        <line x1="840" y1="190" x2="876" y2="190" stroke="#4b5563" strokeWidth="1.5" strokeDasharray="4 2" />
+        <line x1="840" y1="190" x2="876" y2="190" stroke="#e2e8f0" strokeWidth="1.5" strokeDasharray="4 2" />
         <g filter="url(#node-shadow)">
-          <circle cx="900" cy="190" r="24" fill="#1a2035" stroke="#818cf8" strokeWidth="1.5" />
-          <text x="900" y="186" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="700">H2</text>
-          <text x="900" y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Site B</text>
+          <circle cx="900" cy="190" r="24" fill="#ffffff" stroke="#818cf8" strokeWidth="1.5" />
+          <text x="900" y="186" textAnchor="middle" fill="#0f172a" fontSize="11" fontWeight="700">H2</text>
+          <text x="900" y="198" textAnchor="middle" fill="#64748b" fontSize="7">Site B</text>
         </g>
 
         {/* ─── Fan-out lines from S1/S2 to link rows ─── */}
@@ -498,8 +498,8 @@ function TopologyView({
           const y = yPositions[i] ?? 60 + i * 90;
           return (
             <g key={`fan-${i}`}>
-              <line x1="170" y1="190" x2="220" y2={y} stroke="#334155" strokeWidth="1" strokeOpacity="0.5" />
-              <line x1="785" y1="190" x2="740" y2={y} stroke="#334155" strokeWidth="1" strokeOpacity="0.5" />
+              <line x1="170" y1="190" x2="220" y2={y} stroke="#e2e8f0" strokeWidth="1" strokeOpacity="0.5" />
+              <line x1="785" y1="190" x2="740" y2={y} stroke="#e2e8f0" strokeWidth="1" strokeOpacity="0.5" />
             </g>
           );
         })}
