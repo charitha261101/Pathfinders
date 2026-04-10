@@ -29,7 +29,7 @@ const LoginPage: React.FC = () => {
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: '#0f172a',
+        backgroundColor: '#f8fafc',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -75,7 +75,7 @@ const LoginPage: React.FC = () => {
             style={{
               fontSize: 28,
               fontWeight: 800,
-              color: '#f1f5f9',
+              color: '#0f172a',
               margin: '0 0 6px',
               letterSpacing: '-0.025em',
             }}
@@ -97,17 +97,17 @@ const LoginPage: React.FC = () => {
         {/* Login Card */}
         <div
           style={{
-            backgroundColor: '#1e293b',
+            backgroundColor: '#ffffff',
             borderRadius: 12,
             padding: 32,
-            border: '1px solid #334155',
+            border: '1px solid #e2e8f0',
           }}
         >
           <h2
             style={{
               fontSize: 18,
               fontWeight: 600,
-              color: '#f1f5f9',
+              color: '#0f172a',
               margin: '0 0 24px',
             }}
           >
@@ -140,7 +140,7 @@ const LoginPage: React.FC = () => {
                   display: 'block',
                   fontSize: 12,
                   fontWeight: 500,
-                  color: '#94a3b8',
+                  color: '#64748b',
                   marginBottom: 6,
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
@@ -159,17 +159,17 @@ const LoginPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '10px 14px',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #e2e8f0',
                   borderRadius: 8,
-                  color: '#f1f5f9',
+                  color: '#0f172a',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
                   transition: 'border-color 0.15s',
                 }}
                 onFocus={(e) => (e.currentTarget.style.borderColor = '#2563eb')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#334155')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
               />
             </div>
 
@@ -181,7 +181,7 @@ const LoginPage: React.FC = () => {
                   display: 'block',
                   fontSize: 12,
                   fontWeight: 500,
-                  color: '#94a3b8',
+                  color: '#64748b',
                   marginBottom: 6,
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
@@ -200,17 +200,17 @@ const LoginPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '10px 14px',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #e2e8f0',
                   borderRadius: 8,
-                  color: '#f1f5f9',
+                  color: '#0f172a',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
                   transition: 'border-color 0.15s',
                 }}
                 onFocus={(e) => (e.currentTarget.style.borderColor = '#2563eb')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = '#334155')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
               />
             </div>
 

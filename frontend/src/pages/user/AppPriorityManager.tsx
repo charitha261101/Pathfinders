@@ -392,7 +392,7 @@ const AppPriorityManager: React.FC = () => {
                       </span>
                       <span style={{ flex: 1 }}>{app.name}</span>
                       {inQueue && (
-                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 400 }}>Added</span>
+                        <span style={{ fontSize: 10, color: '#64748b', fontWeight: 400 }}>Added</span>
                       )}
                     </button>
                   );
@@ -402,7 +402,7 @@ const AppPriorityManager: React.FC = () => {
           )}
 
           {catalog.length === 0 && (
-            <p style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>
+            <p style={{ fontSize: 13, color: '#64748b', textAlign: 'center', padding: '20px 0' }}>
               No app signatures loaded. The backend may not be running.
             </p>
           )}
@@ -441,7 +441,7 @@ const AppPriorityManager: React.FC = () => {
           )}
 
           {queue.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '30px 0' }}>
+            <p style={{ fontSize: 13, color: '#64748b', textAlign: 'center', padding: '30px 0' }}>
               Click apps from the catalog to add them here.
             </p>
           ) : (
@@ -468,7 +468,7 @@ const AppPriorityManager: React.FC = () => {
                   }}
                 >
                   {/* Drag handle */}
-                  <span style={{ color: '#94a3b8', fontSize: 16, cursor: 'grab', userSelect: 'none' }}>
+                  <span style={{ color: '#64748b', fontSize: 16, cursor: 'grab', userSelect: 'none' }}>
                     &#x2630;
                   </span>
 
@@ -545,7 +545,7 @@ const AppPriorityManager: React.FC = () => {
                       borderRadius: 6,
                       border: 'none',
                       backgroundColor: 'transparent',
-                      color: '#94a3b8',
+                      color: '#64748b',
                       cursor: 'pointer',
                       fontSize: 16,
                       display: 'flex',
@@ -572,7 +572,7 @@ const AppPriorityManager: React.FC = () => {
                 padding: '10px 16px',
                 borderRadius: 8,
                 border: 'none',
-                backgroundColor: queue.length === 0 || applying ? '#94a3b8' : '#2563eb',
+                backgroundColor: queue.length === 0 || applying ? '#94a3b8' : '#2563eb', // disabled state - keep gray
                 color: '#ffffff',
                 fontSize: 13,
                 fontWeight: 600,
@@ -632,7 +632,7 @@ const AppPriorityManager: React.FC = () => {
           {appliedResults.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '30px 0' }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-              <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>
+              <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>
                 Apply priorities to see estimated quality impact.
               </p>
               <p style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>
@@ -747,7 +747,7 @@ const AppPriorityManager: React.FC = () => {
 
                     {/* Animated bandwidth bar */}
                     <div style={{ marginBottom: 6 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#64748b', marginBottom: 3 }}>
                         <span>Bandwidth allocation</span>
                         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0f172a' }}>
                           {app.ceil_kbps >= 1000 ? `${(app.ceil_kbps / 1000).toFixed(1)} Mbps` : `${app.ceil_kbps} Kbps`}
@@ -765,7 +765,7 @@ const AppPriorityManager: React.FC = () => {
                     </div>
 
                     {/* Detail row */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#64748b' }}>
                       <span>Floor: {(app.guaranteed_kbps / 1000).toFixed(1)} Mbps</span>
                       <span>Ceiling: {(app.ceil_kbps / 1000).toFixed(1)} Mbps</span>
                       <span>{barPct.toFixed(1)}% of link</span>
@@ -778,13 +778,13 @@ const AppPriorityManager: React.FC = () => {
               {appliedResults.some(a => a.priority === 'LOW' || a.priority === 'BLOCKED') && (
                 <div style={{
                   marginTop: 14, padding: 12, borderRadius: 8,
-                  background: '#0f172a', border: '1px solid #334155',
+                  background: '#ffffff', border: '1px solid #e2e8f0',
                 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>
                     How Quality Drop Works
                   </div>
-                  <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
-                    YouTube uses <strong style={{ color: '#e2e8f0' }}>DASH adaptive streaming</strong>. It constantly probes available bandwidth.
+                  <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
+                    YouTube uses <strong style={{ color: '#0f172a' }}>DASH adaptive streaming</strong>. It constantly probes available bandwidth.
                     When PathWise enforces a ceiling (via Linux tc or Windows QoS), the DASH engine detects the throughput drop
                     within <strong style={{ color: '#f59e0b' }}>2–3 seconds</strong> and automatically switches to a lower quality tier.
                   </div>
