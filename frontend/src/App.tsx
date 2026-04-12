@@ -3,137 +3,129 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  NavLink,
   Navigate,
+  useLocation,
 } from "react-router-dom";
-import { motion } from "framer-motion";
-import {
-  LayoutDashboard,
-  ShieldCheck,
-  Network,
-  Activity,
-  Wifi,
-  FlaskConical,
-} from "lucide-react";
 
+import { AuthProvider, useAuth } from "./context/AuthContext";
+
+// Auth
+import LoginPage from "./pages/auth/LoginPage";
+
+// Admin pages
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import UserManagement from "./pages/admin/UserManagement";
+import SiteAnalytics from "./pages/admin/SiteAnalytics";
+import RevenueDashboard from "./pages/admin/RevenueDashboard";
+import LSTMControlCenter from "./pages/admin/LSTMControlCenter";
+import TicketDashboard from "./pages/admin/TicketDashboard";
+
+// User pages
+import UserDashboard from "./pages/user/UserDashboard";
+import MySitesAnalytics from "./pages/user/MySitesAnalytics";
+import TrafficOverview from "./pages/user/TrafficOverview";
+import BillingDashboard from "./pages/user/BillingDashboard";
+import SupportTickets from "./pages/user/SupportTickets";
+import UserProfile from "./pages/user/UserProfile";
+import UserTelemetry from "./pages/user/UserTelemetry";
+import UserSandbox from "./pages/user/UserSandbox";
+import UserIBN from "./pages/user/UserIBN";
+import UserAudit from "./pages/user/UserAudit";
+import UserReports from "./pages/user/UserReports";
+import AppPriorityManager from "./pages/user/AppPriorityManager";
+import AppQoSOverview from "./pages/admin/AppQoSOverview";
+
+// Legacy pages (existing system)
 import Dashboard from "./pages/Dashboard";
-import AdminPanel from "./pages/AdminPanel";
 import NetworkSimulation from "./pages/NetworkSimulation";
 import SandboxViewer from "./pages/SandboxViewer";
-import { useScoreboardWebSocket } from "./hooks/useWebSocket";
-import { useNetworkStore } from "./store/networkStore";
+import IBNConsole from "./pages/IBNConsole";
+import AuditLog from "./pages/AuditLog";
+import Reports from "./pages/Reports";
+import AdminPanel from "./pages/AdminPanel";
 
-const NAV_ITEMS = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/simulation", icon: Network, label: "Network Simulation" },
-  { to: "/sandbox", icon: FlaskConical, label: "Sandbox" },
-  { to: "/admin", icon: ShieldCheck, label: "Admin Panel" },
-];
+// Guards
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAdmin, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" />;
+  if (!isAdmin) return <Navigate to="/user/dashboard" />;
+  return <>{children}</>;
+}
 
-const App: React.FC = () => {
-  useScoreboardWebSocket();
-  const wsConnected = useNetworkStore((s) => s.wsConnected);
-  const lstmEnabled = useNetworkStore((s) => s.lstmEnabled);
+function UserRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" />;
+  return <>{children}</>;
+}
 
+function LoadingScreen() {
   return (
-    <Router>
-      <div className="flex h-screen bg-pw-bg overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-64 flex-shrink-0 bg-pw-surface/50 border-r border-pw-border flex flex-col">
-          {/* Brand */}
-          <div className="p-6 border-b border-pw-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pw-accent to-pw-cyan flex items-center justify-center">
-                <Activity className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-white tracking-tight">
-                  PathWise
-                </h1>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-pw-accent-light">
-                  AI-Powered SD-WAN
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-1">
-            {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  isActive ? "nav-item-active" : "nav-item"
-                }
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* Status Footer */}
-          <div className="p-4 border-t border-pw-border space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-pw-muted">Server</span>
-              <div className="flex items-center gap-1.5">
-                <div
-                  className={
-                    wsConnected ? "status-dot-green" : "status-dot-red"
-                  }
-                />
-                <span
-                  className={wsConnected ? "text-pw-emerald" : "text-pw-rose"}
-                >
-                  {wsConnected ? "Connected" : "Offline"}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-pw-muted">LSTM Model</span>
-              <div className="flex items-center gap-1.5">
-                <div
-                  className={
-                    lstmEnabled ? "status-dot-green" : "status-dot-amber"
-                  }
-                />
-                <span
-                  className={
-                    lstmEnabled ? "text-pw-emerald" : "text-pw-amber"
-                  }
-                >
-                  {lstmEnabled ? "Active" : "Inactive"}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-pw-muted/60">
-              <Wifi className="w-3 h-3" />
-              <span>Offline Mode — No Docker Required</span>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="h-full"
-          >
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/simulation" element={<NetworkSimulation />} />
-              <Route path="/sandbox" element={<SandboxViewer />} />
-              <Route path="/admin" element={<AdminPanel />} />
-            </Routes>
-          </motion.div>
-        </main>
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: '#0f172a', color: '#94a3b8', fontFamily: 'Inter, system-ui, sans-serif'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 10, margin: '0 auto 12px',
+          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'white', fontWeight: 700, fontSize: 18
+        }}>P</div>
+        <p>Loading PathWise AI...</p>
       </div>
-    </Router>
+    </div>
   );
-};
+}
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          {/* Auth */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<Navigate to="/login" />} />
+
+          {/* Admin Portal */}
+          <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute><UserManagement /></AdminRoute>} />
+          <Route path="/admin/analytics" element={<AdminRoute><SiteAnalytics /></AdminRoute>} />
+          <Route path="/admin/revenue" element={<AdminRoute><RevenueDashboard /></AdminRoute>} />
+          <Route path="/admin/lstm" element={<AdminRoute><LSTMControlCenter /></AdminRoute>} />
+          <Route path="/admin/tickets" element={<AdminRoute><TicketDashboard /></AdminRoute>} />
+          <Route path="/admin/app-qos" element={<AdminRoute><AppQoSOverview /></AdminRoute>} />
+
+          {/* User Portal */}
+          <Route path="/user/dashboard" element={<UserRoute><UserDashboard /></UserRoute>} />
+          <Route path="/user/sites" element={<UserRoute><MySitesAnalytics /></UserRoute>} />
+          <Route path="/user/traffic" element={<UserRoute><TrafficOverview /></UserRoute>} />
+          <Route path="/user/billing" element={<UserRoute><BillingDashboard /></UserRoute>} />
+          <Route path="/user/tickets" element={<UserRoute><SupportTickets /></UserRoute>} />
+          <Route path="/user/profile" element={<UserRoute><UserProfile /></UserRoute>} />
+
+          {/* Network Tools (legacy features in user portal) */}
+          <Route path="/user/telemetry" element={<UserRoute><UserTelemetry /></UserRoute>} />
+          <Route path="/user/sandbox" element={<UserRoute><UserSandbox /></UserRoute>} />
+          <Route path="/user/ibn" element={<UserRoute><UserIBN /></UserRoute>} />
+          <Route path="/user/audit" element={<UserRoute><UserAudit /></UserRoute>} />
+          <Route path="/user/reports" element={<UserRoute><UserReports /></UserRoute>} />
+          <Route path="/user/apps" element={<UserRoute><AppPriorityManager /></UserRoute>} />
+
+          {/* Legacy system pages (still accessible) */}
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/simulation" element={<NetworkSimulation />} />
+          <Route path="/sandbox" element={<SandboxViewer />} />
+          <Route path="/ibn" element={<IBNConsole />} />
+          <Route path="/audit" element={<AuditLog />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/admin-legacy" element={<AdminPanel />} />
+
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/login" />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
+}

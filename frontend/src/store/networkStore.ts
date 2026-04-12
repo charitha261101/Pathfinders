@@ -37,6 +37,13 @@ interface NetworkState {
 
   tickCount: number;
   setTickCount: (n: number) => void;
+
+  // Auth state
+  isAuthenticated: boolean;
+  userRole: string | null;
+  userEmail: string | null;
+  setAuth: (token: string, role: string, email: string) => void;
+  logout: () => void;
 }
 
 export const useNetworkStore = create<NetworkState>((set) => ({
@@ -70,4 +77,20 @@ export const useNetworkStore = create<NetworkState>((set) => ({
 
   tickCount: 0,
   setTickCount: (n) => set({ tickCount: n }),
+
+  isAuthenticated: !!localStorage.getItem("pathwise_token"),
+  userRole: localStorage.getItem("pathwise_role"),
+  userEmail: localStorage.getItem("pathwise_email"),
+  setAuth: (token, role, email) => {
+    localStorage.setItem("pathwise_token", token);
+    localStorage.setItem("pathwise_role", role);
+    localStorage.setItem("pathwise_email", email);
+    set({ isAuthenticated: true, userRole: role, userEmail: email });
+  },
+  logout: () => {
+    localStorage.removeItem("pathwise_token");
+    localStorage.removeItem("pathwise_role");
+    localStorage.removeItem("pathwise_email");
+    set({ isAuthenticated: false, userRole: null, userEmail: null });
+  },
 }));

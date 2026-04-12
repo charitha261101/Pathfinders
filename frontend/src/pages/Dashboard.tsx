@@ -329,6 +329,7 @@ function HealthCard({
     trend: string;
     brownout_active: boolean;
     latency_forecast?: number[];
+    reasoning?: string;
   };
 }) {
   const score = health.health_score;
@@ -356,6 +357,11 @@ function HealthCard({
             {linkId.replace("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
           </p>
           <p className="text-[10px] text-pw-muted capitalize">{health.trend}</p>
+          {health.reasoning && (
+            <p className="text-[9px] text-pw-muted/70 mt-0.5 max-w-[160px] truncate" title={health.reasoning}>
+              {health.reasoning}
+            </p>
+          )}
         </div>
         {/* Circular score */}
         <div className="relative w-12 h-12">

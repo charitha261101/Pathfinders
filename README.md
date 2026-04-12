@@ -1,208 +1,247 @@
 # PathWise AI
 
 **AI-Powered SD-WAN Management Platform**
-
 Team Pathfinders | COSC6370-001 Advanced Software Engineering | Spring 2026
 
 ---
 
-## Overview
+## 1. Overview
 
-PathWise AI is an intelligent SD-WAN management system that uses LSTM-based predictive telemetry to proactively optimize network traffic across multiple WAN links. The platform predicts link degradation 30-60 seconds in advance and autonomously steers traffic to maintain service quality — all validated through a digital twin sandbox before production changes.
+PathWise AI is an intelligent, vendor-agnostic SD-WAN management platform that
+turns enterprise network management from reactive to predictive. An LSTM neural
+network forecasts WAN link degradation 30–60 seconds ahead; the platform
+autonomously reroutes mission-critical traffic (VoIP, video, financial) through
+an SDN controller, achieving **hitless handoff with zero packet loss**. Every
+proposed routing change is first validated in a Mininet/Batfish **digital-twin
+sandbox** (< 5 s) before it is allowed to touch production.
 
-### Five Core Features
+A complementary **App-Priority Switch** module lets end users assign
+`HIGH / NORMAL / LOW` priority to detected applications (Zoom, Teams, YouTube,
+Netflix, …). The bandwidth enforcer then applies real QoS rules on the host
+(`tc` on Linux, `New-NetQosPolicy` on Windows).
+
+### Core Features
 
 | # | Feature | Description |
-|---|---------|-------------|
-| 1 | **Predictive Telemetry Engine** | LSTM model forecasting latency, jitter, and packet loss 30-60s ahead |
-| 2 | **Autonomous Traffic Steering** | Make-before-break hitless handoff across WAN links via SDN controllers |
-| 3 | **Digital Twin Sandbox** | Mininet + Batfish validation of routing changes in <5 seconds |
-| 4 | **Intent-Based Management** | Natural language policy interface ("Prioritize VoIP over guest WiFi") |
-| 5 | **Multi-Link Health Scoreboard** | Real-time WebSocket dashboard with D3.js visualizations |
+|---|---|---|
+| 1 | Predictive Telemetry Engine | LSTM + attention forecasts latency/jitter/loss at t+30s, t+60s |
+| 2 | Autonomous Traffic Steering | Pre-emptive, hitless flow-table update via OpenDaylight / ONOS |
+| 3 | Digital Twin Sandbox | Mininet topology + Batfish policy check in < 5 s |
+| 4 | Intent-Based Management | Natural-language policies → YANG/NETCONF payloads |
+| 5 | Multi-Link Health Scoreboard | Real-time D3.js dashboard over WebSocket |
+| 6 | App-Priority Switch | Per-app QoS enforcement (Windows PowerShell / Linux `tc`) |
+| 7 | RBAC + Audit | JWT auth, 5-role RBAC, tamper-evident audit log |
 
 ---
 
-## Architecture
+## 2. Repository Layout
 
 ```
-Frontend (React + D3 + TailwindCSS)
-        │  REST / WebSocket
-API Gateway (FastAPI)
-        │
-Core Services ─── Telemetry Ingestion
-        │         Prediction Engine (LSTM)
-        │         Traffic Steering (SDN)
-        │         Digital Twin (Mininet + Batfish)
-        │
-Data Layer ────── TimescaleDB (telemetry)
-                  Redis (state + pub/sub)
-                  SDN Controllers (OpenDaylight / ONOS)
+PATHWISEAI/
+├── run.py                     # offline launcher (uvicorn)
+├── start_enforcer.bat         # Windows admin launcher for real QoS
+├── setup_pathwise.py          # one-shot dependency installer/checker
+├── requirements.txt           # all Python dependencies
+├── docker-compose.yml         # full-stack container deployment
+├── server/                    # FastAPI backend
+│   ├── main.py                # app entry point
+│   ├── routers/               # REST/WS routers (telemetry, steering, apps, ibn…)
+│   ├── app_qos/               # App-Priority Switch (enforcer, signatures)
+│   ├── lstm_engine.py         # trained LSTM inference
+│   ├── auth.py, rbac.py       # JWT + role checks
+│   ├── audit.py, reports.py   # audit log + PDF/CSV reports
+│   └── sandbox.py             # digital-twin validator
+├── frontend/                  # React 18 + TypeScript + Vite dashboard
+│   └── src/pages, components  # scoreboard, IBN, policies, audit, reports
+├── ml/                        # LSTM training pipeline
+│   ├── scripts/train_lstm.py
+│   └── checkpoints/
+├── infra/                     # TimescaleDB init, Redis, nginx configs
+├── tests/                     # pytest unit + integration suites
+└── docs/                      # API spec + design documents
 ```
 
-## Tech Stack
+---
+
+## 3. Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, TypeScript, D3.js, TailwindCSS, Zustand |
-| API Gateway | FastAPI (Python 3.11+) |
-| ML Engine | PyTorch 2.x, LSTM with attention |
-| Telemetry Store | TimescaleDB (PostgreSQL) |
-| Cache / Pub-Sub | Redis 7+ Streams |
-| SDN Controllers | OpenDaylight / ONOS |
-| Network Emulation | Mininet |
-| Config Validation | Batfish |
-| Containerization | Docker + Docker Compose |
-| CI/CD | GitHub Actions |
+|---|---|
+| Frontend | React 18, TypeScript, Vite, TailwindCSS, Zustand, D3.js, Recharts |
+| API | FastAPI, Uvicorn (Python 3.11+) |
+| ML | PyTorch 2.x, NumPy, Pandas, scikit-learn |
+| Auth | JWT (PyJWT), bcrypt |
+| Persistence | TimescaleDB (prod) / SQLite (local) via SQLAlchemy |
+| Messaging | Redis 7 (prod) / in-proc pub/sub (local) |
+| SDN | OpenDaylight, ONOS (REST northbound) |
+| Validation | Mininet (WSL2 on Windows), Batfish (pybatfish) |
+| Telemetry | SNMP (pysnmp), gNMI (pygnmi), NetFlow |
+| QoS enforcement | Linux `tc`, Windows `New-NetQosPolicy` |
+| Container | Docker, Docker Compose |
 
 ---
 
-## Quick Start
+## 4. Prerequisites
 
-### Prerequisites
+| Requirement | Version |
+|---|---|
+| Python | 3.11 or newer |
+| Node.js | 18 LTS or newer (npm 9+) |
+| OS | Windows 10/11, macOS 12+, or Linux |
+| Docker (optional, for full stack) | 24+ |
+| WSL2 (optional, for Mininet data generation) | Ubuntu 22.04 |
+| RAM | ≥ 8 GB local, ≥ 32 GB for full production deployment |
 
-- Python 3.11+
-- Node.js 20+
-- Docker & Docker Compose
+---
 
-### 1. Clone and configure
+## 5. Installation
 
-```bash
-git clone <repo-url> pathwise-ai
-cd pathwise-ai
-cp .env.example .env
-```
-
-### 2. Generate synthetic telemetry data
-
-```bash
-pip install numpy pandas pyarrow
-python ml/scripts/generate_synthetic_data.py --duration-hours 1
-```
-
-### 3. Start infrastructure
+### Option A — automatic (recommended)
 
 ```bash
-docker compose up -d timescaledb redis
+python setup_pathwise.py              # installs everything + verifies imports
+python setup_pathwise.py --check      # dry-run: report only, no installs
 ```
 
-### 4. Start all services
+The script:
+- verifies Python ≥ 3.11 and Node ≥ 18
+- runs `pip install -r requirements.txt`
+- runs `npm install` in `frontend/`
+- import-checks FastAPI, Uvicorn, PyTorch, JWT, bcrypt, psutil, etc.
+- warns on missing optional components (Docker, WSL, Mininet)
+
+### Option B — manual
+
+```bash
+# 1. Python backend
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# 2. Frontend
+cd frontend
+npm install
+cd ..
+```
+
+---
+
+## 6. Running the Platform
+
+### Local development (no Docker)
+
+Terminal 1 — backend:
+
+```bash
+python run.py
+# → http://localhost:8000/docs  (OpenAPI UI)
+```
+
+Terminal 2 — frontend:
+
+```bash
+cd frontend
+npm start
+# → http://localhost:3000       (dashboard; proxies /api and /ws to :8000)
+```
+
+### Real Windows QoS enforcement (App-Priority Switch)
+
+Right-click **`start_enforcer.bat` → Run as administrator**. This sets
+`ENFORCER_MODE=powershell` and dispatches real `New-NetQosPolicy` rules.
+Without admin rights the enforcer silently falls back to simulate mode.
+
+### Docker Compose (full stack)
 
 ```bash
 docker compose up --build
+# dashboard  → http://localhost:3000
+# api        → http://localhost:8000
+# timescale  → localhost:5432
+# redis      → localhost:6379
 ```
 
-### 5. Access the dashboard
+### Environment variables (`.env`)
 
-- **Dashboard:** http://localhost:3000
-- **API Docs:** http://localhost:8000/docs
-- **API (Swagger):** http://localhost:8000/redoc
+Copy `.env.example` to `.env` and adjust. Key variables:
 
----
-
-## Development
-
-### Run with hot-reload
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
-
-### Run tests
-
-```bash
-# Unit tests
-pytest tests/unit/ -v
-
-# Integration tests (requires Redis)
-pytest tests/integration/ -v
-
-# All tests
-pytest tests/ -v
-```
-
-### Train the LSTM model
-
-```bash
-# Generate 30 days of synthetic data
-python ml/scripts/generate_synthetic_data.py
-
-# Train
-python ml/scripts/train.py --epochs 100
-
-# Evaluate
-python ml/scripts/evaluate.py
-```
-
-### Verify project structure
-
-```bash
-python build_orchestrator.py
+JWT_SECRET=change-me
+ENFORCER_MODE=simulate        # simulate | tc | powershell
+WAN_INTERFACE=Ethernet
+TOTAL_LINK_MBPS=100
+DATA_SOURCE=sim               # sim | live
+ODL_HOST=localhost
+ONOS_HOST=localhost
 ```
 
 ---
 
-## Project Structure
+## 7. Running Tests
 
-```
-pathwise-ai/
-├── docker-compose.yml          # Full stack orchestration
-├── docker-compose.dev.yml      # Dev overrides (hot-reload)
-├── build_orchestrator.py       # Project structure validator
-├── pyproject.toml              # Python project config
-├── .github/workflows/          # CI/CD pipelines
-├── services/
-│   ├── api-gateway/            # FastAPI application
-│   ├── telemetry-ingestion/    # SNMP/NetFlow/gNMI collector
-│   ├── prediction-engine/      # LSTM ML service
-│   ├── traffic-steering/       # SDN integration service
-│   └── digital-twin/           # Mininet + Batfish sandbox
-├── frontend/                   # React + D3 dashboard
-├── ml/
-│   ├── scripts/                # Training & evaluation scripts
-│   ├── notebooks/              # Jupyter exploration notebooks
-│   └── data/                   # Raw, processed, synthetic data
-├── infra/
-│   ├── db/                     # TimescaleDB schema
-│   ├── mininet/                # Topology definitions
-│   └── batfish/                # Network configs
-└── tests/
-    ├── unit/                   # Component tests
-    ├── integration/            # Service-to-service tests
-    └── e2e/                    # End-to-end tests
+```bash
+pytest tests/ -v                  # full suite
+pytest tests/test_app_qos -v      # App-Priority module
+pytest tests/ -k steering         # keyword filter
 ```
 
 ---
 
-## API Endpoints
+## 8. Key API Endpoints
 
 | Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/api/v1/telemetry/{link_id}` | Raw telemetry for a link |
-| `GET` | `/api/v1/telemetry/links` | List all active links |
-| `GET` | `/api/v1/predictions/{link_id}` | Latest prediction + health score |
-| `GET` | `/api/v1/predictions/all` | All link predictions |
-| `POST` | `/api/v1/steering/execute` | Trigger a steering action |
-| `GET` | `/api/v1/steering/history` | Audit log of steering decisions |
-| `POST` | `/api/v1/sandbox/validate` | Run sandbox validation |
-| `GET` | `/api/v1/sandbox/reports/{id}` | Get validation report |
-| `POST` | `/api/v1/policies/intent` | Submit NL policy intent |
-| `GET` | `/api/v1/policies/active` | List active policies |
-| `DELETE` | `/api/v1/policies/{name}` | Remove a policy |
-| `WS` | `/ws/scoreboard` | Real-time health score stream |
+|---|---|---|
+| POST | `/api/auth/login` | JWT authentication |
+| GET  | `/api/v1/telemetry/{link_id}` | Per-link telemetry |
+| GET  | `/api/v1/predictions/all` | Current LSTM forecasts |
+| POST | `/api/v1/steering/execute` | Trigger a routing change |
+| POST | `/api/sandbox/validate` | Run digital-twin check |
+| POST | `/api/policy` | Submit an intent-based policy |
+| GET  | `/api/v1/apps/active` | Detected running applications |
+| POST | `/api/v1/apps/priorities` | Apply per-app QoS rules |
+| GET  | `/api/v1/apps/enforcement-status` | QoS enforcer state |
+| WS   | `/ws/scoreboard` | Real-time health-score stream |
+| WS   | `/api/v1/apps/ws/{user_id}/quality` | Per-user quality updates |
+
+Full schema: http://localhost:8000/docs
 
 ---
 
-## Team
+## 9. Default Roles (RBAC)
 
-| Member | Role | Responsibility |
-|--------|------|----------------|
-| Vineeth | PM | API Gateway, Docker orchestration, CI/CD, integration |
-| Meghana | Requirements | ML pipeline, data engineering, LSTM training |
-| Bharadwaj | Design/Test | React dashboard, Health Scoreboard, IBN console, tests |
-| Sricharitha | Config/Tech | Mininet/Batfish, SDN integration, steering engine |
+| Role | Capability |
+|---|---|
+| `SUPER_ADMIN` | All admin endpoints + cross-user visibility |
+| `NETWORK_ADMIN` | Telemetry, steering, policies |
+| `IT_MANAGER` | Read-only dashboards + reports |
+| `MSP_TECHNICIAN` | Multi-tenant ops |
+| `BUSINESS_OWNER` / `END_USER` | App-Priority self-service |
 
 ---
 
-## License
+## 10. Troubleshooting
 
-Academic project — COSC6370-001, Spring 2026.
+| Symptom | Fix |
+|---|---|
+| `winerror 10013` binding port 8000 | Another process holds the port — kill it or run on `--port 8001` |
+| App-Priority shows `mode: simulate` | Set `ENFORCER_MODE=powershell` *and* run as Administrator |
+| `pybatfish` import fails | Start the Batfish container: `docker run -d -p 9997:9997 batfish/allinone` |
+| `torch` download is slow | Pre-install with `pip install torch --index-url https://download.pytorch.org/whl/cpu` |
+| Frontend cannot reach API | Ensure backend is on `:8000`; Vite proxy is configured in `frontend/vite.config.ts` |
+
+---
+
+## 11. Team
+
+| Member | Role |
+|---|---|
+| Vineeth Reddy Kodakandla | Project manager — API, integration, DevOps |
+| Meghana Nalluri | Requirements lead — ML pipeline, LSTM training |
+| Bharadwaj Jakkula | Design/Test lead — React dashboard, IBN, test automation |
+| Sricharitha Katta | Config/Tech lead — Mininet/Batfish, SDN clients |
+
+---
+
+## 12. License
+
+Academic project — COSC6370-001 Advanced Software Engineering, Spring 2026.
+Not for production use without authorization.

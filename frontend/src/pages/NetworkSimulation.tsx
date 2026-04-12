@@ -62,6 +62,12 @@ const LINK_META: Record<
     color: "#34d399",
     gradient: "from-emerald-500 to-emerald-600",
   },
+  "wifi": {
+    label: "WiFi (Live)",
+    icon: Wifi,
+    color: "#a78bfa",
+    gradient: "from-violet-500 to-violet-600",
+  },
 };
 
 const NetworkSimulation: React.FC = () => {
@@ -306,6 +312,96 @@ const NetworkSimulation: React.FC = () => {
 
 /* ── Topology Visualization ─────────────────────────────── */
 
+/*
+ * WAN_PATHS defines the multi-hop topology for each link.
+ * Each intermediate node has: id, label, shape, and x position.
+ * y is set per-link row in the rendering loop.
+ */
+const WAN_PATHS: Record<
+  string,
+  { nodes: { id: string; label: string; shape: "diamond" | "hexagon" | "circle" | "rect" }[]; }
+> = {
+  "fiber-primary": {
+    nodes: [
+      { id: "fiber-pop-1", label: "ISP PoP",    shape: "hexagon" },
+      { id: "fiber-ix",    label: "IX",          shape: "diamond" },
+      { id: "fiber-pop-2", label: "ISP PoP",    shape: "hexagon" },
+    ],
+  },
+  "broadband-secondary": {
+    nodes: [
+      { id: "bb-modem", label: "Cable Modem",   shape: "rect" },
+      { id: "bb-dslam", label: "DSLAM",         shape: "diamond" },
+      { id: "bb-hub",   label: "ISP Hub",       shape: "hexagon" },
+    ],
+  },
+  "satellite-backup": {
+    nodes: [
+      { id: "sat-gs-1", label: "Ground Stn",    shape: "rect" },
+      { id: "sat-geo",  label: "Satellite",     shape: "diamond" },
+      { id: "sat-gs-2", label: "Ground Stn",    shape: "rect" },
+    ],
+  },
+  "5g-mobile": {
+    nodes: [
+      { id: "5g-gnb-1", label: "gNodeB",        shape: "hexagon" },
+      { id: "5g-core",  label: "5G Core",       shape: "diamond" },
+      { id: "5g-gnb-2", label: "gNodeB",        shape: "hexagon" },
+    ],
+  },
+  "wifi": {
+    nodes: [
+      { id: "wifi-ap",   label: "WiFi AP",       shape: "hexagon" },
+      { id: "wifi-rtr",  label: "Router",        shape: "diamond" },
+      { id: "wifi-isp",  label: "ISP",           shape: "hexagon" },
+    ],
+  },
+};
+
+function IntermediateNode({
+  x, y, shape, label, color, opacity,
+}: {
+  x: number; y: number; shape: string; label: string; color: string; opacity: number;
+}) {
+  const sz = 8;
+  return (
+    <g opacity={opacity}>
+      {shape === "diamond" && (
+        <polygon
+          points={`${x},${y - sz} ${x + sz},${y} ${x},${y + sz} ${x - sz},${y}`}
+          fill="#0f172a"
+          stroke={color}
+          strokeWidth="1.5"
+        />
+      )}
+      {shape === "hexagon" && (
+        <polygon
+          points={`${x - sz},${y} ${x - sz / 2},${y - sz} ${x + sz / 2},${y - sz} ${x + sz},${y} ${x + sz / 2},${y + sz} ${x - sz / 2},${y + sz}`}
+          fill="#0f172a"
+          stroke={color}
+          strokeWidth="1.5"
+        />
+      )}
+      {shape === "rect" && (
+        <rect
+          x={x - sz}
+          y={y - sz + 1}
+          width={sz * 2}
+          height={sz * 2 - 2}
+          rx="3"
+          fill="#0f172a"
+          stroke={color}
+          strokeWidth="1.5"
+        />
+      )}
+      {shape === "circle" && (
+        <circle cx={x} cy={y} r={sz} fill="#0f172a" stroke={color} strokeWidth="1.5" />
+      )}
+      <text x={x} y={y + sz + 11} textAnchor="middle" fill={color} fontSize="7" fontWeight="500">{label}</text>
+    </g>
+  );
+}
+
 function TopologyView({
   scoreboard,
   lstmEnabled,
@@ -315,14 +411,17 @@ function TopologyView({
   lstmEnabled: boolean;
   activeRules?: { id: string; source_link: string; target_link: string; traffic_classes: string[] }[];
 }) {
-  const links = Object.entries(scoreboard);
+  const S1_X = 140;
+  const S2_X = 810;
+  const NODE_SPREAD_START = 300;
+  const NODE_SPREAD_END = 650;
 
   return (
     <div className="relative">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Network className="w-4 h-4 text-pw-accent-light" />
-          SD-WAN Topology — Live Status
+          SD-WAN Topology — Live Multi-Hop View
         </h3>
         <div className="flex items-center gap-4 text-xs text-pw-muted">
           <span className="flex items-center gap-1.5">
@@ -334,11 +433,13 @@ function TopologyView({
           <span className="flex items-center gap-1.5">
             <div className="w-3 h-1 rounded-full bg-pw-rose" /> Critical
           </span>
+          <span className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rotate-45 border border-pw-muted bg-transparent" /> Intermediary
+          </span>
         </div>
       </div>
 
-      <svg viewBox="0 0 900 260" className="w-full" style={{ maxHeight: 280 }}>
-        {/* Background grid */}
+      <svg viewBox="0 0 950 380" className="w-full" style={{ maxHeight: 400 }}>
         <defs>
           <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
             <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1f2a40" strokeWidth="0.3" />
@@ -352,89 +453,137 @@ function TopologyView({
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id="node-shadow">
-            <feDropShadow dx="0" dy="2" stdDeviation="4" floodOpacity="0.3" />
+            <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3" />
           </filter>
+          <marker id="arrow-green" viewBox="0 0 6 6" refX="6" refY="3" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#10b981" />
+          </marker>
         </defs>
-        <rect width="900" height="260" fill="url(#grid)" rx="12" />
+        <rect width="950" height="380" fill="url(#grid)" rx="12" />
 
-        {/* Switch nodes */}
+        {/* ─── Host H1 ─── */}
         <g filter="url(#node-shadow)">
-          <rect x="120" y="100" width="100" height="50" rx="12" fill="#1a2035" stroke="#6366f1" strokeWidth="1.5" />
-          <text x="170" y="122" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="600">Switch 1</text>
-          <text x="170" y="138" textAnchor="middle" fill="#94a3b8" fontSize="9">Edge Router</text>
+          <circle cx="50" cy="190" r="24" fill="#1a2035" stroke="#818cf8" strokeWidth="1.5" />
+          <text x="50" y="186" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="700">H1</text>
+          <text x="50" y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Site A (HQ)</text>
         </g>
-        <g filter="url(#node-shadow)">
-          <rect x="680" y="100" width="100" height="50" rx="12" fill="#1a2035" stroke="#6366f1" strokeWidth="1.5" />
-          <text x="730" y="122" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="600">Switch 2</text>
-          <text x="730" y="138" textAnchor="middle" fill="#94a3b8" fontSize="9">Edge Router</text>
-        </g>
+        <line x1="74" y1="190" x2="115" y2="190" stroke="#4b5563" strokeWidth="1.5" strokeDasharray="4 2" />
 
-        {/* Host nodes */}
+        {/* ─── Switch 1 ─── */}
         <g filter="url(#node-shadow)">
-          <circle cx="50" cy="125" r="22" fill="#1a2035" stroke="#818cf8" strokeWidth="1.5" />
-          <text x="50" y="128" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="600">H1</text>
-        </g>
-        <g filter="url(#node-shadow)">
-          <circle cx="850" cy="125" r="22" fill="#1a2035" stroke="#818cf8" strokeWidth="1.5" />
-          <text x="850" y="128" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="600">H2</text>
+          <rect x="115" y="164" width="55" height="52" rx="10" fill="#1a2035" stroke="#6366f1" strokeWidth="2" />
+          <text x={S1_X} y="186" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="700">S1</text>
+          <text x={S1_X} y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Edge Rtr</text>
         </g>
 
-        {/* Host-to-switch connections */}
-        <line x1="72" y1="125" x2="120" y2="125" stroke="#4b5563" strokeWidth="1.5" strokeDasharray="4 2" />
-        <line x1="780" y1="125" x2="828" y2="125" stroke="#4b5563" strokeWidth="1.5" strokeDasharray="4 2" />
+        {/* ─── Switch 2 ─── */}
+        <g filter="url(#node-shadow)">
+          <rect x="785" y="164" width="55" height="52" rx="10" fill="#1a2035" stroke="#6366f1" strokeWidth="2" />
+          <text x={S2_X} y="186" textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="700">S2</text>
+          <text x={S2_X} y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Edge Rtr</text>
+        </g>
 
-        {/* WAN Links */}
-        {[
-          { id: "fiber-primary", y: 55 },
-          { id: "broadband-secondary", y: 105 },
-          { id: "satellite-backup", y: 155 },
-          { id: "5g-mobile", y: 205 },
-        ].map(({ id, y }) => {
+        {/* ─── Host H2 ─── */}
+        <line x1="840" y1="190" x2="876" y2="190" stroke="#4b5563" strokeWidth="1.5" strokeDasharray="4 2" />
+        <g filter="url(#node-shadow)">
+          <circle cx="900" cy="190" r="24" fill="#1a2035" stroke="#818cf8" strokeWidth="1.5" />
+          <text x="900" y="186" textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="700">H2</text>
+          <text x="900" y="198" textAnchor="middle" fill="#94a3b8" fontSize="7">Site B</text>
+        </g>
+
+        {/* ─── Fan-out lines from S1/S2 to link rows ─── */}
+        {Object.keys(scoreboard).map((_, i) => {
+          const yPositions = Object.keys(scoreboard).length <= 4
+            ? [60, 150, 240, 330] : [50, 120, 190, 260, 330];
+          const y = yPositions[i] ?? 60 + i * 90;
+          return (
+            <g key={`fan-${i}`}>
+              <line x1="170" y1="190" x2="220" y2={y} stroke="#334155" strokeWidth="1" strokeOpacity="0.5" />
+              <line x1="785" y1="190" x2="740" y2={y} stroke="#334155" strokeWidth="1" strokeOpacity="0.5" />
+            </g>
+          );
+        })}
+
+        {/* ─── WAN Link Rows with Intermediate Nodes ─── */}
+        {Object.keys(scoreboard).map((id, i) => {
+          const yPositions = Object.keys(scoreboard).length <= 4
+            ? [60, 150, 240, 330] : [50, 120, 190, 260, 330];
+          const y = yPositions[i] ?? 60 + i * 90;
+          return { id, y };
+        }).map(({ id, y }) => {
           const h = scoreboard[id];
           const score = h?.health_score ?? 75;
           const brownout = h?.brownout_active ?? false;
           const meta = LINK_META[id];
-          const linkColor =
-            score >= 70 ? "#34d399" : score >= 40 ? "#fbbf24" : "#f43f5e";
+          const linkColor = score >= 70 ? "#34d399" : score >= 40 ? "#fbbf24" : "#f43f5e";
           const isActive = !brownout || lstmEnabled;
+          const nodes = WAN_PATHS[id]?.nodes || [];
+          const nodeCount = nodes.length;
+
+          const nodeXPositions = nodes.map((_, i) => {
+            const fraction = (i + 1) / (nodeCount + 1);
+            return NODE_SPREAD_START + fraction * (NODE_SPREAD_END - NODE_SPREAD_START);
+          });
+
+          const allX = [220, ...nodeXPositions, 740];
+          const pathD = allX.map((px, i) => `${i === 0 ? "M" : "L"}${px},${y}`).join(" ");
 
           return (
             <g key={id}>
-              {/* Link line */}
-              <line
-                x1="220"
-                y1={y}
-                x2="680"
-                y2={y}
+              {/* Full hop-to-hop path */}
+              <path
+                d={pathD}
+                fill="none"
                 stroke={linkColor}
-                strokeWidth={isActive ? 2.5 : 1.5}
-                strokeOpacity={isActive ? 0.8 : 0.3}
+                strokeWidth={isActive ? 2 : 1.2}
+                strokeOpacity={isActive ? 0.7 : 0.25}
                 strokeDasharray={brownout && !lstmEnabled ? "6 4" : "none"}
               />
-              {/* Animated flow particles */}
+
+              {/* Segment highlights between hops */}
+              {allX.map((px, i) => {
+                if (i === 0) return null;
+                return (
+                  <line
+                    key={`seg-${id}-${i}`}
+                    x1={allX[i - 1]} y1={y} x2={px} y2={y}
+                    stroke={linkColor}
+                    strokeWidth={isActive ? 2 : 1.2}
+                    strokeOpacity={isActive ? 0.7 : 0.25}
+                    strokeDasharray={brownout && !lstmEnabled ? "6 4" : "none"}
+                  />
+                );
+              })}
+
+              {/* Animated flow particles along full path */}
               {isActive && (
                 <>
                   <circle r="3" fill={linkColor} opacity="0.9">
-                    <animateMotion
-                      dur={`${2 + Math.random()}s`}
-                      repeatCount="indefinite"
-                      path={`M220,${y} L680,${y}`}
-                    />
+                    <animateMotion dur="3s" repeatCount="indefinite" path={pathD} />
                   </circle>
-                  <circle r="3" fill={linkColor} opacity="0.6">
-                    <animateMotion
-                      dur={`${2.5 + Math.random()}s`}
-                      repeatCount="indefinite"
-                      path={`M220,${y} L680,${y}`}
-                      begin="0.8s"
-                    />
+                  <circle r="2.5" fill={linkColor} opacity="0.5">
+                    <animateMotion dur="3.5s" repeatCount="indefinite" path={pathD} begin="1s" />
                   </circle>
                 </>
               )}
-              {/* Label */}
+
+              {/* Intermediate nodes */}
+              {nodes.map((node, i) => (
+                <IntermediateNode
+                  key={node.id}
+                  x={nodeXPositions[i]}
+                  y={y}
+                  shape={node.shape}
+                  label={node.label}
+                  color={linkColor}
+                  opacity={isActive ? 1 : 0.4}
+                />
+              ))}
+
+              {/* Link name and score */}
               <text
-                x="450"
-                y={y - 8}
+                x={475}
+                y={y - 14}
                 textAnchor="middle"
                 fill={linkColor}
                 fontSize="9"
@@ -443,14 +592,15 @@ function TopologyView({
                 {meta?.label} — {score.toFixed(0)}
                 {brownout && !lstmEnabled ? " ⚠" : ""}
               </text>
-              {/* Brownout warning */}
+
+              {/* Brownout message */}
               {brownout && (
                 <text
-                  x="450"
-                  y={y + 14}
+                  x={475}
+                  y={y + 24}
                   textAnchor="middle"
                   fill={lstmEnabled ? "#34d399" : "#f43f5e"}
-                  fontSize="8"
+                  fontSize="7.5"
                 >
                   {lstmEnabled ? "✓ Brownout avoided (LSTM)" : "⚠ BROWNOUT ACTIVE"}
                 </text>
@@ -459,41 +609,34 @@ function TopologyView({
           );
         })}
 
-        {/* Reroute arcs for active routing rules */}
+        {/* ─── Reroute arcs for active routing rules ─── */}
         {activeRules.map((rule) => {
-          const linkYMap: Record<string, number> = {
-            "fiber-primary": 55,
-            "broadband-secondary": 105,
-            "satellite-backup": 155,
-            "5g-mobile": 205,
-          };
+          const linkIds = Object.keys(scoreboard);
+          const yPositions = linkIds.length <= 4 ? [60, 150, 240, 330] : [50, 120, 190, 260, 330];
+          const linkYMap: Record<string, number> = {};
+          linkIds.forEach((id, i) => { linkYMap[id] = yPositions[i] ?? 60 + i * 90; });
           const yFrom = linkYMap[rule.source_link];
           const yTo = linkYMap[rule.target_link];
           if (yFrom == null || yTo == null) return null;
           const midY = (yFrom + yTo) / 2;
-          const curveX = 780;
+          const arcX = 870;
           return (
             <g key={`reroute-${rule.id}`}>
               <path
-                d={`M700,${yFrom} Q${curveX},${midY} 700,${yTo}`}
+                d={`M755,${yFrom} Q${arcX},${midY} 755,${yTo}`}
                 fill="none"
                 stroke="#10b981"
                 strokeWidth="2"
                 strokeDasharray="5 3"
                 opacity="0.7"
+                markerEnd="url(#arrow-green)"
               >
                 <animate attributeName="stroke-dashoffset" from="16" to="0" dur="0.8s" repeatCount="indefinite" />
               </path>
-              <circle r="4" fill="#10b981">
-                <animateMotion
-                  dur="1.5s"
-                  repeatCount="indefinite"
-                  path={`M700,${yFrom} Q${curveX},${midY} 700,${yTo}`}
-                />
+              <circle r="3.5" fill="#10b981">
+                <animateMotion dur="1.5s" repeatCount="indefinite" path={`M755,${yFrom} Q${arcX},${midY} 755,${yTo}`} />
               </circle>
-              <text x={curveX + 8} y={midY + 4} fill="#10b981" fontSize="8" fontWeight="600">
-                REROUTE
-              </text>
+              <text x={arcX + 8} y={midY + 4} fill="#10b981" fontSize="7" fontWeight="600">REROUTE</text>
             </g>
           );
         })}

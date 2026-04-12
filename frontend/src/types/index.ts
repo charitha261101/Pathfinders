@@ -89,12 +89,76 @@ export interface ActiveRoutingRule {
   age_seconds?: number;
 }
 
+export interface IBNIntent {
+  id: string;
+  raw_text: string;
+  status: "active" | "compliant" | "violated" | "auto_steering" | "paused" | "deleted";
+  action: string;
+  traffic_classes: string[];
+  metric?: string;
+  threshold?: number;
+  threshold_unit?: string;
+  preferred_link?: string;
+  avoid_link?: string;
+  source_link?: string;
+  target_link?: string;
+  high_app?: string | null;
+  low_app?: string | null;
+  throttle_kbps?: number | null;
+  yang_config: string;
+  created_at: number;
+  last_checked: number;
+  violation_count: number;
+  auto_steer_count: number;
+  last_violation?: string;
+  age_seconds: number;
+}
+
+export interface IBNParseResult {
+  action: string;
+  traffic_classes: string[];
+  metric?: string;
+  threshold?: number;
+  threshold_unit?: string;
+  preferred_link?: string;
+  avoid_link?: string;
+  source_link?: string;
+  target_link?: string;
+  high_app?: string | null;
+  low_app?: string | null;
+  throttle_kbps?: number | null;
+  yang_config: string;
+}
+
+export interface TrafficPolicy {
+  id: string;
+  app_name: string;
+  display_name: string;
+  action: string;
+  bandwidth_kbps: number;
+  priority: string;
+  created_at: number;
+  created_by: string;
+  active: boolean;
+  reason: string;
+  age_seconds: number;
+}
+
+export interface IBNIntentSummary {
+  id: string;
+  status: string;
+  raw_text: string;
+  action: string;
+  violation_count: number;
+}
+
 export interface ScoreboardUpdate {
   type: string;
   timestamp: number;
   lstm_enabled: boolean;
   links: Record<string, LinkHealth>;
   active_routing_rules: ActiveRoutingRule[];
+  ibn_intents: IBNIntentSummary[];
   steering_events: SteeringEvent[];
   comparison: {
     lstm_on: ComparisonMetrics;

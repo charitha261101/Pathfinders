@@ -19,7 +19,10 @@ from server.state import state, LinkPrediction, TelemetryPoint
 
 try:
     import torch
-    from services.prediction_engine.model.lstm_network import PathWiseLSTM
+    import sys
+    from pathlib import Path as _Path
+    sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "services" / "prediction-engine"))
+    from model.lstm_network import PathWiseLSTM
 
     TORCH_AVAILABLE = True
 except Exception:
@@ -29,6 +32,8 @@ except Exception:
 class PredictionEngine:
     def __init__(self):
         self.model = None
+        self.feat_means: np.ndarray | None = None
+        self.feat_stds: np.ndarray | None = None
         self._load_model()
 
     def _load_model(self):
@@ -40,8 +45,14 @@ class PredictionEngine:
             try:
                 data = torch.load(ckpt, map_location="cpu", weights_only=False)
                 self.model.load_state_dict(data["model_state_dict"])
-            except Exception:
-                pass
+                if "means" in data and "stds" in data:
+                    self.feat_means = np.array(data["means"], dtype=np.float32)
+                    self.feat_stds = np.array(data["stds"], dtype=np.float32)
+                print(f"[lstm] Trained model loaded (epoch {data.get('epoch')}, val_loss {data.get('val_loss', '?'):.4f})")
+            except Exception as e:
+                print(f"[lstm] Failed to load checkpoint: {e}")
+        else:
+            print("[lstm] No checkpoint found, using random weights")
         self.model.eval()
 
     def predict_link(self, link_id: str) -> LinkPrediction | None:
@@ -70,6 +81,7 @@ class PredictionEngine:
         conf = float(confidence[0].item())
         health = self._compute_health(lat_fc, jit_fc, pkt_fc, conf)
 
+        reasoning = self._generate_reasoning(health, conf, lat_fc, jit_fc, pkt_fc)
         return LinkPrediction(
             link_id=link_id,
             health_score=health,
@@ -78,6 +90,7 @@ class PredictionEngine:
             jitter_forecast=jit_fc,
             packet_loss_forecast=pkt_fc,
             timestamp=time.time(),
+            reasoning=reasoning,
         )
 
     def _predict_heuristic(self, link_id: str, points: list[TelemetryPoint]) -> LinkPrediction:
@@ -104,6 +117,7 @@ class PredictionEngine:
         confidence = max(0.3, min(0.95, 1.0 - abs(lat_trend) / 10))
         health = self._compute_health(lat_fc, jit_fc, pkt_fc, confidence)
 
+        reasoning = self._generate_reasoning(health, confidence, lat_fc, jit_fc, pkt_fc)
         return LinkPrediction(
             link_id=link_id,
             health_score=health,
@@ -112,6 +126,7 @@ class PredictionEngine:
             jitter_forecast=jit_fc,
             packet_loss_forecast=pkt_fc,
             timestamp=time.time(),
+            reasoning=reasoning,
         )
 
     def _build_features(self, points: list[TelemetryPoint]) -> np.ndarray | None:
@@ -161,6 +176,10 @@ class PredictionEngine:
         features = np.column_stack([
             raw, mean_lat, std_lat, mean_jit, ema_lat, ema_pkt, d_lat, d_jit, d_pkt
         ])
+
+        if self.feat_means is not None and self.feat_stds is not None:
+            features = (features - self.feat_means) / self.feat_stds
+
         return features
 
     @staticmethod
@@ -175,6 +194,58 @@ class PredictionEngine:
 
         raw_score = 0.4 * lat_s + 0.3 * jit_s + 0.3 * pkt_s
         return round(raw_score * (0.5 + 0.5 * confidence), 1)
+
+    @staticmethod
+    def _generate_reasoning(health_score, confidence, lat_fc, jit_fc, pkt_fc,
+                            lat_trend=None) -> str:
+        """
+        Generate a human-readable explanation for the prediction.
+        Satisfies Req-Func-Sw-14: display reasoning for every automated path switch.
+        """
+        parts = []
+        avg_lat = sum(lat_fc) / max(len(lat_fc), 1)
+        avg_jit = sum(jit_fc) / max(len(jit_fc), 1)
+        avg_pkt = sum(pkt_fc) / max(len(pkt_fc), 1)
+
+        # Health assessment
+        if health_score >= 80:
+            parts.append("Link is healthy")
+        elif health_score >= 50:
+            parts.append("Link is degrading")
+        else:
+            parts.append("Link is critically degraded")
+
+        # Confidence explanation
+        if confidence >= 0.85:
+            parts.append("with high prediction confidence")
+        elif confidence >= 0.6:
+            parts.append("with moderate confidence")
+        else:
+            parts.append("with low confidence (unstable pattern)")
+
+        # Dominant factor
+        factors = []
+        if avg_lat > 80:
+            factors.append(f"high latency ({avg_lat:.0f}ms)")
+        if avg_jit > 15:
+            factors.append(f"elevated jitter ({avg_jit:.1f}ms)")
+        if avg_pkt > 1.0:
+            factors.append(f"packet loss ({avg_pkt:.2f}%)")
+
+        if factors:
+            parts.append("due to " + ", ".join(factors))
+        else:
+            parts.append("with stable metrics across all indicators")
+
+        # Trend
+        if lat_fc and len(lat_fc) >= 3:
+            delta = lat_fc[-1] - lat_fc[0]
+            if delta > 10:
+                parts.append("— latency trending upward")
+            elif delta < -10:
+                parts.append("— latency improving")
+
+        return ". ".join(parts) + "."
 
 
 engine = PredictionEngine()

@@ -31,6 +31,7 @@ class LinkPrediction:
     jitter_forecast: list[float]
     packet_loss_forecast: list[float]
     timestamp: float
+    reasoning: str = ""  # Human-readable explanation (Req-Func-Sw-14)
 
 
 @dataclass
@@ -75,12 +76,24 @@ class AppState:
 
     def __init__(self):
         self.lstm_enabled: bool = False
-        self.active_links: list[str] = [
-            "fiber-primary",
-            "broadband-secondary",
-            "satellite-backup",
-            "5g-mobile",
-        ]
+
+        # DATA_SOURCE=hybrid adds "wifi" as a live link alongside 3 replayed links
+        import os
+        data_source = os.environ.get("DATA_SOURCE", "sim").lower()
+        if data_source == "hybrid":
+            self.active_links: list[str] = [
+                "fiber-primary",
+                "5g-mobile",
+                "satellite-backup",
+                "wifi",
+            ]
+        else:
+            self.active_links: list[str] = [
+                "fiber-primary",
+                "broadband-secondary",
+                "satellite-backup",
+                "5g-mobile",
+            ]
 
         self.telemetry: dict[str, deque[TelemetryPoint]] = {
             link: deque(maxlen=300) for link in self.active_links
