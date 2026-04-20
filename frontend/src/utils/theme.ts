@@ -1,6 +1,6 @@
 export const colors = {
-  bgDark: '#0f172a',
-  bgMid: '#1e293b',
+  bgDark: '#ffffff',
+  bgMid: '#f1f5f9',
   bgLight: '#f8fafc',
   bgCard: '#ffffff',
   primary: '#2563eb',
@@ -10,9 +10,9 @@ export const colors = {
   critical: '#dc2626',
   textPrimary: '#0f172a',
   textSecondary: '#64748b',
-  textInverse: '#f1f5f9',
+  textInverse: '#0f172a',
   border: '#e2e8f0',
-  borderDark: '#334155',
+  borderDark: '#cbd5e1',
 };
 
 export const healthColor = (score: number): string => {

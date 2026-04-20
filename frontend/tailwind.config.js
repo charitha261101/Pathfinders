@@ -5,18 +5,18 @@ module.exports = {
     extend: {
       colors: {
         pw: {
-          bg: "#0a0e1a",
-          surface: "#111827",
-          card: "#1a2035",
-          border: "#1f2a40",
+          bg: "#f8fafc",
+          surface: "#ffffff",
+          card: "#ffffff",
+          border: "#e2e8f0",
           accent: "#6366f1",
           "accent-light": "#818cf8",
-          cyan: "#22d3ee",
-          emerald: "#34d399",
-          amber: "#fbbf24",
-          rose: "#f43f5e",
-          text: "#e2e8f0",
-          muted: "#94a3b8",
+          cyan: "#0891b2",
+          emerald: "#059669",
+          amber: "#d97706",
+          rose: "#e11d48",
+          text: "#0f172a",
+          muted: "#64748b",
         },
       },
       animation: {
@@ -29,8 +29,8 @@ module.exports = {
       },
       keyframes: {
         glow: {
-          "0%": { boxShadow: "0 0 5px rgba(99, 102, 241, 0.3)" },
-          "100%": { boxShadow: "0 0 20px rgba(99, 102, 241, 0.6)" },
+          "0%": { boxShadow: "0 0 5px rgba(99, 102, 241, 0.15)" },
+          "100%": { boxShadow: "0 0 20px rgba(99, 102, 241, 0.3)" },
         },
         slideUp: {
           "0%": { opacity: 0, transform: "translateY(20px)" },
