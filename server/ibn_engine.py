@@ -14,6 +14,7 @@ Example intents:
 
 from __future__ import annotations
 import asyncio
+import os as _os_ibn
 import re
 import time
 import uuid
@@ -48,6 +49,8 @@ class IntentAction(str, Enum):
     THROTTLE_APP = "throttle_app"
     PRIORITIZE_APP = "prioritize_app"
     PRIORITIZE_OVER = "prioritize_over"
+    # Selective IP degrade — time-bounded, per-IP (does not nuke the app)
+    SELECTIVE_DEGRADE = "selective_degrade"
 
 
 @dataclass
@@ -65,6 +68,10 @@ class ParsedIntent:
     high_app: Optional[str] = None       # App to prioritize
     low_app: Optional[str] = None        # App to throttle
     throttle_kbps: Optional[int] = None  # Throttle bandwidth
+    # Selective IP degrade
+    target_ips: Optional[list[str]] = None
+    degrade_mode: Optional[str] = None   # "block" | "throttle"
+    duration_s: Optional[int] = None
 
 
 @dataclass
@@ -134,6 +141,96 @@ def _extract_number(text: str) -> Optional[float]:
 def _extract_unit(text: str) -> Optional[str]:
     match = re.search(r"\d+(?:\.\d+)?\s*(ms|%|mbps|gbps|kbps)", text, re.IGNORECASE)
     return match.group(1).lower() if match else None
+
+
+_DURATION_RE = re.compile(
+    r"for\s+(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hour|hours)\b",
+    re.IGNORECASE,
+)
+
+_IP_RE = re.compile(
+    r"\b(\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?)\b"
+)
+
+
+def _parse_duration_s(text: str) -> Optional[int]:
+    m = _DURATION_RE.search(text)
+    if not m:
+        return None
+    n = int(m.group(1))
+    unit = m.group(2).lower()
+    if unit.startswith("s"):
+        return n
+    if unit.startswith("m") and not unit.startswith("min"):
+        # bare 'm' -> minutes
+        return n * 60
+    if unit.startswith("min"):
+        return n * 60
+    if unit.startswith("h"):
+        return n * 3600
+    return n
+
+
+def _parse_selective_intent(text: str) -> Optional[ParsedIntent]:
+    """
+    Parse selective, time-bounded IP degrades. Examples:
+      - "Degrade youtube for 2 minutes"
+      - "Throttle youtube to 300 kbps for 30 seconds"
+      - "Block 172.217.14.1 for 5 minutes"
+      - "Block 172.217.14.1, 142.250.80.46 for 60 seconds"
+      - "Degrade 172.217.14.0/24 to 500 kbps for 2 min"
+    """
+    from server.traffic_shaper import resolve_app_name
+
+    t = text.lower().strip()
+    duration = _parse_duration_s(t)
+    if duration is None:
+        return None  # "for N minutes" is required to distinguish from full block
+
+    ips = _IP_RE.findall(text)  # preserve case insensitivity off for IPs
+
+    # Throttle rate (optional — only meaningful when action is 'throttle')
+    kbps_match = re.search(r"to\s+(\d+)\s*(kbps|mbps|kb|mb)", t)
+    kbps: Optional[int] = None
+    if kbps_match:
+        n = int(kbps_match.group(1))
+        unit = (kbps_match.group(2) or "kbps").lower()
+        kbps = n * 1000 if unit in ("mbps", "mb") else n
+
+    wants_throttle = bool(
+        kbps_match
+        or re.search(r"\b(throttle|degrade|slow|limit|restrict|cap)\b", t)
+    )
+    wants_block = bool(re.search(r"\b(block|stop|kill|drop|cut)\b", t))
+
+    if not (wants_throttle or wants_block):
+        return None
+
+    mode = "throttle" if wants_throttle and not wants_block else (
+        "block" if wants_block else "throttle"
+    )
+
+    # If the user named an app, resolve it; IPs may be explicit or will be
+    # filled in at execution time via selective_degrader.candidate_ips_for().
+    app = None
+    # Pull the most app-y looking token from the text
+    for token in re.findall(r"[a-z_][a-z_0-9]+", t):
+        if resolve_app_name(token):
+            app = resolve_app_name(token)
+            break
+
+    if not ips and not app:
+        return None
+
+    return ParsedIntent(
+        action=IntentAction.SELECTIVE_DEGRADE,
+        traffic_classes=[app] if app else ["ip"],
+        low_app=app,
+        throttle_kbps=kbps if mode == "throttle" else None,
+        target_ips=ips or None,
+        degrade_mode=mode,
+        duration_s=duration,
+    )
 
 
 def _parse_app_intent(text: str) -> Optional[ParsedIntent]:
@@ -233,7 +330,13 @@ def parse_intent(raw_text: str) -> ParsedIntent:
     """Parse a natural-language intent into a structured policy."""
     t = raw_text.lower().strip()
 
-    # ── Check for app-level traffic shaping first ──────────────
+    # ── Time-bounded selective degrade has highest precedence ──
+    # because it's the most specific form (requires "for N ...").
+    selective = _parse_selective_intent(raw_text)
+    if selective:
+        return selective
+
+    # ── Check for app-level traffic shaping next ───────────────
     from server.traffic_shaper import resolve_app_name, APP_ALIASES
     app_result = _parse_app_intent(t)
     if app_result:
@@ -385,8 +488,48 @@ def create_intent(raw_text: str) -> NetworkIntent:
     # Execute app-level traffic shaping immediately
     if parsed.action in (IntentAction.THROTTLE_APP, IntentAction.PRIORITIZE_APP, IntentAction.PRIORITIZE_OVER):
         _execute_traffic_shaping(intent)
+    elif parsed.action == IntentAction.SELECTIVE_DEGRADE:
+        _execute_selective_degrade(intent)
 
     return intent
+
+
+def _execute_selective_degrade(intent: NetworkIntent) -> None:
+    """Apply a time-bounded selective IP degrade (does NOT nuke the app)."""
+    from server.app_qos import selective_degrader
+    p = intent.parsed
+    try:
+        ips = list(p.target_ips or [])
+        if not ips and p.low_app:
+            ips = selective_degrader.candidate_ips_for(p.low_app)[:8]
+        if not ips:
+            intent.status = IntentStatus.VIOLATED
+            intent.last_violation = "No target IPs available for selective degrade"
+            return
+        mode = (p.degrade_mode or "throttle")
+        # Default throttle rate when NL didn't specify one: 500 kbps forces
+        # YouTube/Netflix to drop to 240-360p, the App-Switcher demo target.
+        throttle_kbps = p.throttle_kbps
+        if mode == "throttle" and (throttle_kbps is None or throttle_kbps < 32):
+            throttle_kbps = 500
+        rule = selective_degrader.start_rule(
+            ips=ips,
+            mode=mode,  # type: ignore[arg-type]
+            duration_s=int(p.duration_s or 60),
+            throttle_kbps=throttle_kbps,
+            app_id=p.low_app,
+            reason=intent.raw_text,
+        )
+        intent.status = IntentStatus.COMPLIANT
+        intent.last_violation = None
+        intent.yang_config = (intent.yang_config or "") + (
+            f"\n<!-- selective-rule id={rule.id} ips={len(rule.ips)} "
+            f"mode={rule.mode} ttl={rule.duration_s}s -->"
+        )
+    except Exception as exc:
+        print(f"[IBN] selective degrade failed: {exc}")
+        intent.status = IntentStatus.VIOLATED
+        intent.last_violation = str(exc)
 
 
 def _execute_traffic_shaping(intent: NetworkIntent):
@@ -497,6 +640,16 @@ def check_intent_compliance(intent: NetworkIntent) -> None:
 
     p = intent.parsed
     intent.last_checked = time.time()
+    # One-shot actions (app-level shaping, selective degrade) are executed at
+    # creation time and not re-evaluated -- the selective_degrader sweeper
+    # tears them down on TTL expiry.
+    if p.action in (
+        IntentAction.SELECTIVE_DEGRADE,
+        IntentAction.THROTTLE_APP,
+        IntentAction.PRIORITIZE_APP,
+        IntentAction.PRIORITIZE_OVER,
+    ):
+        return
     violated = False
     violation_detail = ""
 
@@ -651,6 +804,9 @@ def serialize_intent(i: NetworkIntent) -> dict:
         "high_app": i.parsed.high_app,
         "low_app": i.parsed.low_app,
         "throttle_kbps": i.parsed.throttle_kbps,
+        "target_ips": i.parsed.target_ips,
+        "degrade_mode": i.parsed.degrade_mode,
+        "duration_s": i.parsed.duration_s,
         "yang_config": i.yang_config,
         "created_at": i.created_at,
         "last_checked": i.last_checked,
@@ -762,6 +918,101 @@ def _to_yang_netconf(parsed_dict: dict) -> dict:
     }
 
 
+def _yang_to_xml_payload(parsed_dict: dict) -> str:
+    """
+    Render the YANG payload as a NETCONF-compliant XML <config> element.
+    Wrapped by an <edit-config><config>...</config></edit-config> RPC when
+    sent via ncclient below.
+
+    Uses the ietf-diffserv-classifier + ietf-qos-policy YANG modules that
+    CLAUDE.md §10 specifies for traffic prioritization.
+    """
+    action = parsed_dict.get("action", "prioritize")
+    app = parsed_dict.get("app", "default")
+    dscp = parsed_dict.get("dscp", 0)
+    priority = _yang_priority(parsed_dict)
+    source_link = parsed_dict.get("source_link") or "fiber-primary"
+    target_link = parsed_dict.get("target_link") or "broadband-secondary"
+
+    return (
+        '<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">'
+        '<interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">'
+        f'<interface><name>{app}</name>'
+        '<type xmlns:ianaift="urn:ietf:params:xml:ns:yang:iana-if-type">'
+        'ianaift:ethernetCsmacd</type>'
+        '<enabled>true</enabled>'
+        '</interface></interfaces>'
+        '<qos-policy xmlns="urn:ietf:params:xml:ns:yang:ietf-qos-policy">'
+        f'<policy><name>pathwise-{action}</name>'
+        f'<classifier-entry><name>{app}</name>'
+        f'<filter-entry><dscp>{dscp}</dscp></filter-entry>'
+        '</classifier-entry>'
+        '<policy-entry>'
+        f'<action>{action}</action>'
+        f'<priority>{priority}</priority>'
+        f'<from-link>{source_link}</from-link>'
+        f'<to-link>{target_link}</to-link>'
+        '</policy-entry>'
+        '</policy></qos-policy>'
+        '</config>'
+    )
+
+
+def _netconf_submit(parsed_dict: dict) -> dict:
+    """
+    Submit the YANG payload to a NETCONF server via ncclient (RFC 6241 transport).
+
+    Connection is attempted to the SDN controller's NETCONF endpoint
+    (ODL default 2830). If ncclient isn't installed or the server can't be
+    reached, returns a graceful failure dict that callers merge into the
+    deploy_intent response — the REST fallback via sdn_adapter still runs.
+    """
+    import os as _os
+
+    host = _os.getenv("NETCONF_HOST") or _os.getenv("ODL_HOST", "opendaylight")
+    port = int(_os.getenv("NETCONF_PORT", "2830"))
+    username = _os.getenv("NETCONF_USER") or _os.getenv("ODL_USER", "admin")
+    password = _os.getenv("NETCONF_PASS") or _os.getenv("ODL_PASS", "admin")
+
+    payload_xml = _yang_to_xml_payload(parsed_dict)
+
+    try:
+        from ncclient import manager  # type: ignore
+    except ImportError:
+        return {
+            "attempted": False,
+            "transport": "none",
+            "reason": "ncclient_not_installed",
+            "payload_xml": payload_xml,
+        }
+
+    try:
+        with manager.connect(
+            host=host, port=port, username=username, password=password,
+            hostkey_verify=False, device_params={"name": "default"},
+            timeout=10,
+        ) as mgr:
+            result = mgr.edit_config(target="running", config=payload_xml)
+            return {
+                "attempted": True,
+                "transport": "netconf",
+                "ok": result.ok,
+                "host": host,
+                "port": port,
+                "payload_xml": payload_xml,
+            }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "transport": "netconf",
+            "ok": False,
+            "reason": f"{type(exc).__name__}: {exc}",
+            "host": host,
+            "port": port,
+            "payload_xml": payload_xml,
+        }
+
+
 def deploy_intent(intent: dict) -> dict:
     """
     Translate an intent (natural-language command) to YANG/NETCONF and submit
@@ -841,7 +1092,14 @@ def deploy_intent(intent: dict) -> dict:
             "elapsed_ms": round((_time.perf_counter() - t0) * 1000, 2),
         }
 
-    # 5. Submit to SDN controller
+    # 5. Submit to SDN controller — try NETCONF transport first (RFC 6241),
+    # then REST flow-install. When NETCONF_ENABLED=true, the NETCONF path
+    # is authoritative; otherwise the REST path provides a stable fallback.
+    netconf_enabled = _os_ibn.getenv("NETCONF_ENABLED", "false").lower() == "true"
+    netconf_result = None
+    if netconf_enabled:
+        netconf_result = _netconf_submit(parsed)
+
     node_id = parsed.get("node_id", "openflow:1")
     ok = adapter.update_flow_table(node_id, flow_id, flow_body)
 
@@ -850,7 +1108,9 @@ def deploy_intent(intent: dict) -> dict:
         "success": ok,
         "flow_id": flow_id,
         "elapsed_ms": round(elapsed_ms, 2),
+        "within_sla_50ms": elapsed_ms < 50.0,
         "yang_payload": yang_payload,
         "sandbox": sandbox_result,
+        "netconf": netconf_result,
         "intent": parsed,
     }

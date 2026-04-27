@@ -24,6 +24,7 @@ from server.app_qos.priority_manager import (
     get_quality_predictions,
     get_all_user_priorities,
 )
+from server.app_qos import selective_degrader
 
 router = APIRouter(prefix="/api/v1/apps", tags=["app-priority"])
 
@@ -63,6 +64,15 @@ class PriorityItem(BaseModel):
 class PriorityRequest(BaseModel):
     priorities: List[PriorityItem]      # [{app_id, priority}] from frontend
     total_mbps: Optional[float] = None
+
+
+class SelectiveRequest(BaseModel):
+    app_id: Optional[str] = None
+    ips: List[str]
+    mode: str                           # "block" | "throttle"
+    duration_s: int
+    throttle_kbps: Optional[int] = None
+    reason: Optional[str] = ""
 
 
 # ── Endpoints ─────────────────────────────────────────────────────
@@ -234,6 +244,79 @@ def quality_predictions(claims=Depends(require_user)):
 def admin_all_priorities(claims=Depends(require_admin)):
     """Admin: view all users' priority settings."""
     return {"all_priorities": get_all_user_priorities()}
+
+
+# ── Selective IP Degrade ─────────────────────────────────────────
+# Narrow-scope, time-bounded per-IP throttle or block. Distinct from the
+# App Priority Switch which does a full-app domain block.
+
+@router.get("/selective/candidates/{app_id}")
+def selective_candidates(app_id: str, claims=Depends(require_user)):
+    """Return pickable IPs/CIDRs for a given app (static CIDRs + live DNS)."""
+    if app_id not in APP_SIGNATURES:
+        raise HTTPException(404, f"Unknown app_id: {app_id}")
+    ips = selective_degrader.candidate_ips_for(app_id)
+    sig = APP_SIGNATURES[app_id]
+    return {
+        "app_id": app_id,
+        "display_name": sig.display_name,
+        "ips": ips,
+        "cidrs": sig.cidrs,
+    }
+
+
+@router.get("/selective")
+def selective_list(claims=Depends(require_user)):
+    """List currently active selective rules (with remaining seconds)."""
+    return {"rules": selective_degrader.list_rules()}
+
+
+@router.post("/selective")
+def selective_create(req: SelectiveRequest, claims=Depends(require_user)):
+    """
+    Start a time-bounded selective degrade rule.
+    Body: {app_id?, ips[], mode, duration_s, throttle_kbps?, reason?}
+    """
+    try:
+        rule = selective_degrader.start_rule(
+            ips=req.ips,
+            mode=req.mode,  # type: ignore[arg-type]
+            duration_s=req.duration_s,
+            throttle_kbps=req.throttle_kbps,
+            app_id=req.app_id,
+            reason=req.reason or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    from server.app_qos.bandwidth_enforcer import ENFORCER_MODE
+    return {
+        "rule": rule.as_dict(),
+        "enforcement": {
+            "mode": ENFORCER_MODE,
+            "active": ENFORCER_MODE != "simulate",
+        },
+        "message": (
+            f"{req.mode.capitalize()} applied to {len(rule.ips)} IP(s) "
+            f"for {rule.duration_s}s. Auto-restore when timer expires."
+        ),
+    }
+
+
+@router.delete("/selective/{rule_id}")
+def selective_stop(rule_id: str, claims=Depends(require_user)):
+    """Stop a selective rule early and remove its OS artifacts."""
+    ok = selective_degrader.stop_rule(rule_id)
+    if not ok:
+        raise HTTPException(404, "Rule not found or already expired")
+    return {"success": True, "rule_id": rule_id}
+
+
+@router.post("/selective/stop-all")
+def selective_stop_all(claims=Depends(require_user)):
+    """Stop every active selective rule."""
+    n = selective_degrader.stop_all()
+    return {"success": True, "stopped": n}
 
 
 @router.websocket("/ws/{user_id}/quality")
