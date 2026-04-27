@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import UserLayout from '../../components/layout/UserLayout';
+import SelectiveIPDegrade from '../../components/SelectiveIPDegrade';
 import { api } from '../../utils/apiClient';
 import { useAuth } from '../../context/AuthContext';
 
@@ -102,6 +103,85 @@ interface QueueItem {
 }
 
 /* ------------------------------------------------------------------ */
+/*  QualityCascade -- animated countdown that cycles through quality   */
+/*  tiers from high → target so the audience literally watches the     */
+/*  drop happen over ~1.8 seconds.                                     */
+/* ------------------------------------------------------------------ */
+
+const STREAMING_TIERS_HIGH_TO_LOW = [
+  '4K', '1440p', '1080p', '720p', '480p', '360p', '240p', '144p',
+];
+const VIDEO_CONF_TIERS_HIGH_TO_LOW = [
+  'Excellent', 'HD (1080p)', 'Medium (720p)', 'Low (360p)', 'Audio Only',
+];
+
+function pickTierChain(target: string): string[] {
+  const t = (target || '').toLowerCase();
+  // streaming label match
+  for (let i = 0; i < STREAMING_TIERS_HIGH_TO_LOW.length; i++) {
+    if (t.includes(STREAMING_TIERS_HIGH_TO_LOW[i].toLowerCase())) {
+      return STREAMING_TIERS_HIGH_TO_LOW.slice(0, i + 1);
+    }
+  }
+  // video-conf label match
+  for (let i = 0; i < VIDEO_CONF_TIERS_HIGH_TO_LOW.length; i++) {
+    if (t.includes(VIDEO_CONF_TIERS_HIGH_TO_LOW[i].toLowerCase())) {
+      return VIDEO_CONF_TIERS_HIGH_TO_LOW.slice(0, i + 1);
+    }
+  }
+  return [target];
+}
+
+interface QualityCascadeProps {
+  target: string;
+  color: string;
+  run: boolean;            // start the cascade
+  stepMs?: number;
+  onDone?: () => void;
+}
+
+const QualityCascade: React.FC<QualityCascadeProps> = ({ target, color, run, stepMs = 220, onDone }) => {
+  const [idx, setIdx] = useState(0);
+  const chain = pickTierChain(target);
+
+  useEffect(() => {
+    if (!run) { setIdx(chain.length - 1); return; }
+    setIdx(0);
+    let i = 0;
+    const tick = () => {
+      i += 1;
+      if (i < chain.length) {
+        setIdx(i);
+        t = setTimeout(tick, stepMs);
+      } else {
+        onDone && onDone();
+      }
+    };
+    let t = setTimeout(tick, stepMs);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run, target]);
+
+  const label = chain[Math.min(idx, chain.length - 1)];
+  const isFinal = idx >= chain.length - 1;
+  return (
+    <span style={{
+      padding: '4px 12px', borderRadius: 20,
+      fontSize: 12, fontWeight: 700,
+      backgroundColor: `${color}15`, color: color,
+      border: `1.5px solid ${color}50`,
+      display: 'inline-block',
+      transition: 'all 120ms ease-out',
+      transform: isFinal ? 'none' : 'scale(1.05)',
+      boxShadow: isFinal ? 'none' : `0 0 10px ${color}80`,
+    }}>
+      {label}
+    </span>
+  );
+};
+
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -117,6 +197,8 @@ const AppPriorityManager: React.FC = () => {
   const [appliedResults, setAppliedResults] = useState<AppliedApp[]>([]);
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  // Track which apps are mid-drop animation so the UI stays flashy
+  const [dropSet, setDropSet] = useState<Set<string>>(new Set());
 
   // Drag state
   const dragItem = useRef<number | null>(null);
@@ -221,7 +303,26 @@ const AppPriorityManager: React.FC = () => {
           : a.estimated_quality || 'Unknown',
       }));
       setAppliedResults(normalized);
-      setMessage({ text: 'Priorities applied successfully', type: 'success' });
+      // Flag every LOW/BLOCKED app so its card runs the cascade + flash
+      const droppedApps = normalized.filter(
+        (a: any) => a.priority === 'LOW' || a.priority === 'BLOCKED'
+      );
+      const dropping = new Set<string>(droppedApps.map((a: any) => a.app_id));
+      setDropSet(dropping);
+      // Clear drop flags after 2.5s so the flash/shake CSS stops
+      setTimeout(() => setDropSet(new Set()), 2500);
+      // Actionable call-to-action banner so the audience sees the effect
+      if (droppedApps.length) {
+        const names = droppedApps.map((a: any) => a.name).join(', ');
+        setMessage({
+          text:
+            `Priorities applied. Now switch to your ${names} browser tab and press F5 — ` +
+            `the stream will stall within ~15 seconds as PathWise resets active connections.`,
+          type: 'success',
+        });
+      } else {
+        setMessage({ text: 'Priorities applied successfully', type: 'success' });
+      }
     } catch (err: any) {
       setMessage({ text: err.message || 'Failed to apply priorities', type: 'error' });
     } finally {
@@ -317,6 +418,12 @@ const AppPriorityManager: React.FC = () => {
           {message.text}
         </div>
       )}
+
+      <SelectiveIPDegrade
+        apps={catalog.map(c => ({
+          app_id: c.app_id, name: c.name, icon: c.icon, color: c.color,
+        }))}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, alignItems: 'start' }}>
         {/* ============ COLUMN 1: App Catalog ============ */}
@@ -711,12 +818,18 @@ const AppPriorityManager: React.FC = () => {
                 const priorityColor = queueItem ? PRIORITY_COLORS[queueItem.priority] : '#64748b';
                 const sig = catalog.find(c => c.app_id === app.app_id);
 
+                const dropping = dropSet.has(app.app_id);
+
                 return (
-                  <div key={app.app_id} style={{
-                    padding: 14, marginBottom: 10, borderRadius: 10,
-                    border: `1px solid ${priorityColor}30`,
-                    background: `linear-gradient(135deg, ${priorityColor}08, #ffffff)`,
-                  }}>
+                  <div
+                    key={app.app_id}
+                    className={dropping ? 'pw-quality-drop' : ''}
+                    style={{
+                      padding: 14, marginBottom: 10, borderRadius: 10,
+                      border: `1px solid ${dropping ? '#ef4444' : priorityColor + '30'}`,
+                      background: `linear-gradient(135deg, ${priorityColor}08, #ffffff)`,
+                    }}
+                  >
                     {/* App header */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -732,17 +845,19 @@ const AppPriorityManager: React.FC = () => {
                           <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{app.name}</span>
                           <div style={{ fontSize: 10, fontWeight: 600, color: priorityColor, textTransform: 'uppercase' }}>
                             {app.priority}
+                            {dropping && (
+                              <span style={{ marginLeft: 8, color: '#ef4444', fontWeight: 700 }}>
+                                ▼ quality dropping…
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <span style={{
-                        padding: '4px 12px', borderRadius: 20,
-                        fontSize: 12, fontWeight: 700,
-                        backgroundColor: `${qualityColor}15`, color: qualityColor,
-                        border: `1.5px solid ${qualityColor}50`,
-                      }}>
-                        {app.estimated_quality || 'N/A'}
-                      </span>
+                      <QualityCascade
+                        target={app.estimated_quality || 'N/A'}
+                        color={qualityColor}
+                        run={dropping}
+                      />
                     </div>
 
                     {/* Animated bandwidth bar */}
@@ -758,7 +873,7 @@ const AppPriorityManager: React.FC = () => {
                           height: '100%', borderRadius: 5,
                           width: `${barPct}%`,
                           background: `linear-gradient(90deg, ${priorityColor}, ${priorityColor}aa)`,
-                          transition: 'width 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                          transition: 'width 450ms cubic-bezier(0.4, 0, 0.2, 1)',
                           boxShadow: `0 0 8px ${priorityColor}40`,
                         }} />
                       </div>
@@ -804,11 +919,26 @@ const AppPriorityManager: React.FC = () => {
           )}
         </div>
 
-        {/* CSS animation for pulsing dot */}
+        {/* CSS animations */}
         <style>{`
           @keyframes pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(1.3); }
+          }
+          @keyframes pwFlashRed {
+            0%   { background-color: rgba(239,68,68,0.18); box-shadow: 0 0 0 2px rgba(239,68,68,0.5); }
+            50%  { background-color: rgba(239,68,68,0.05); box-shadow: 0 0 0 4px rgba(239,68,68,0.25); }
+            100% { background-color: transparent; box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+          }
+          @keyframes pwShake {
+            0%,100% { transform: translateX(0); }
+            20%     { transform: translateX(-4px); }
+            40%     { transform: translateX(4px); }
+            60%     { transform: translateX(-3px); }
+            80%     { transform: translateX(3px); }
+          }
+          .pw-quality-drop {
+            animation: pwFlashRed 2.2s ease-out 1, pwShake 0.45s ease-in-out 2;
           }
         `}</style>
       </div>
