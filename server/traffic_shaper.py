@@ -253,7 +253,11 @@ def _run_powershell(command: str, need_admin: bool = True) -> tuple[bool, str]:
     """
     Execute a PowerShell command. If need_admin=True, writes to a script
     and executes with elevation via Start-Process -Verb RunAs.
+    When ENFORCER_MODE=simulate the call is a no-op so unattended runs /
+    dev mode never trigger a UAC prompt that blocks the request thread.
     """
+    if os.environ.get("ENFORCER_MODE", "").lower() == "simulate":
+        return True, "[SIMULATE] " + command.splitlines()[0][:80]
     if need_admin:
         return _run_elevated_powershell(command)
 
@@ -422,10 +426,27 @@ def _remove_qos_policies(policy_name: str) -> bool:
 
 # ── Public API ─────────────────────────────────────────────────
 
+def _apply_app_qos_enforcement(app_name: str, priority: str) -> None:
+    """
+    Delegate OS-level enforcement to the BandwidthEnforcer used by the
+    App Priority Switch. This is the working 5-step stack:
+    hosts file + NRPT wildcard DNS + DNS flush + Chrome net-service kill
+    + live-IP firewall + global QUIC block. Without this delegation,
+    IBN's "Block YouTube" only installs a NetQoS throttle, which
+    Chrome bypasses via DoH/Alt-Svc cache.
+    """
+    try:
+        from server.app_qos.priority_manager import set_priorities
+        set_priorities("ibn", {app_name: priority})
+    except Exception as exc:
+        print(f"[traffic_shaper] enforcer delegation failed: {exc}")
+
+
 def throttle_app(app_name: str, bandwidth_kbps: int = 500, reason: str = "", created_by: str = "manual") -> Optional[TrafficPolicy]:
     """
     Throttle an application to a specified bandwidth.
     bandwidth_kbps=500 forces YouTube/Netflix to drop to 144p/240p.
+    bandwidth_kbps=1   is treated as BLOCK (runs the full OS stack).
     """
     global _policy_counter
     app = APP_REGISTRY.get(app_name)
@@ -437,6 +458,11 @@ def throttle_app(app_name: str, bandwidth_kbps: int = 500, reason: str = "", cre
     bandwidth_bps = bandwidth_kbps * 1000
 
     _create_qos_throttle(policy_name, app, bandwidth_bps)
+
+    # Full OS-level block: NRPT wildcard DNS + hosts file + Chrome
+    # network-service kill + firewall IPs + global QUIC block.
+    # Without this, Chrome uses DoH + Alt-Svc cache and the video keeps playing.
+    _apply_app_qos_enforcement(app_name, "BLOCKED" if bandwidth_kbps <= 10 else "LOW")
 
     policy = TrafficPolicy(
         id=str(uuid.uuid4())[:8],
@@ -506,6 +532,15 @@ def remove_policy(policy_id: str) -> bool:
         if p.id == policy_id and p.active:
             _remove_qos_policies(p.qos_policy_name)
             p.active = False
+
+            # Also strip the App-Priority-Switch enforcement (hosts file,
+            # NRPT rules, firewall rules, QUIC block). reset_all wipes
+            # every PathWise artifact for the 'ibn' pseudo-user.
+            try:
+                from server.app_qos.priority_manager import reset_all
+                reset_all("ibn")
+            except Exception as exc:
+                print(f"[traffic_shaper] enforcer reset failed: {exc}")
 
             audit.log_event(
                 "POLICY_CHANGE", actor="SYSTEM",
