@@ -401,7 +401,17 @@ import logging as _logging
 
 _gap_logger = _logging.getLogger("pathwise.sandbox")
 
-SANDBOX_MODE = os.getenv("SANDBOX_MODE", "memory")
+def _get_sandbox_mode() -> str:
+    """Read SANDBOX_MODE at call time, not at import time, so test suites that
+    set the env var after sandbox is already imported still take effect.
+    Also lets a single test reset back to memory after exercising mininet
+    without process-wide pollution."""
+    return os.getenv("SANDBOX_MODE", "memory")
+
+
+# Kept for backward compat with code that imports SANDBOX_MODE directly;
+# treat as a snapshot, not the source of truth — use _get_sandbox_mode().
+SANDBOX_MODE = _get_sandbox_mode()
 MININET_HOST = os.getenv("MININET_HOST", "host.docker.internal")
 MININET_PORT = int(os.getenv("MININET_PORT", "6000"))
 BATFISH_HOST = os.getenv("BATFISH_HOST", "batfish")
@@ -597,7 +607,7 @@ def run_sandbox_validation(source_link: str, target_link: str,
     checks.append(_stage_topology_snapshot(topology))
 
     # Stage 2 — Loop detection (Mininet or memory)
-    if SANDBOX_MODE == "mininet":
+    if _get_sandbox_mode() == "mininet":
         mn_result = _call_mininet_server(topology)
         if mn_result is not None:
             checks.append({
@@ -615,7 +625,7 @@ def run_sandbox_validation(source_link: str, target_link: str,
     checks.append(_stage_policy_compliance(flow_body))
 
     # Stage 4 — Reachability (Batfish or memory)
-    if SANDBOX_MODE == "mininet":
+    if _get_sandbox_mode() == "mininet":
         checks.append(_run_batfish_analysis(topology, flow_body))
     else:
         checks.append(_stage_reachability_memory(topology, target_link))
@@ -628,7 +638,7 @@ def run_sandbox_validation(source_link: str, target_link: str,
 
     return {
         "passed": overall_passed,
-        "mode": SANDBOX_MODE,
+        "mode": _get_sandbox_mode(),
         "elapsed_s": round(elapsed_s, 4),
         "within_sla": elapsed_s < 5.0,
         "checks": checks,

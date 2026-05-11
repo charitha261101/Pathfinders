@@ -117,14 +117,21 @@ class PathWiseLoss(nn.Module):
         self,
         weights: dict = None,
         underestimate_penalty: float = 2.0,
+        confidence_weight: float = 0.5,
     ):
         super().__init__()
         self.weights = weights or {"latency": 1.0, "jitter": 1.0, "packet_loss": 2.0}
         self.penalty = underestimate_penalty
+        self.confidence_weight = confidence_weight
 
-    def forward(self, preds: dict, targets: torch.Tensor):
+    def forward(self, preds: dict, targets: torch.Tensor,
+                confidence: torch.Tensor | None = None):
         """
         targets: (batch, horizon, 3) — latency, jitter, packet_loss
+        confidence: (batch, 1) — optional, model's self-assessed prediction quality.
+            When provided, a supervised confidence loss is added so the
+            confidence head actually trains (otherwise its sigmoid output is
+            unlearned noise — Req-Func-Sw-14 would be meaningless).
         """
         total_loss = 0.0
         target_map = {
@@ -132,17 +139,29 @@ class PathWiseLoss(nn.Module):
             "jitter": targets[:, :, 1],
             "packet_loss": targets[:, :, 2],
         }
-        
+
+        per_sample_errors = []
         for key, weight in self.weights.items():
             pred = preds[key]
             target = target_map[key]
             error = pred - target
-            
+
             # Asymmetric MSE: penalize underestimates more
             mse = error ** 2
             underestimate_mask = (error < 0).float()  # pred < actual = missed degradation
             asymmetric_mse = mse * (1 + underestimate_mask * (self.penalty - 1))
-            
+
             total_loss += weight * asymmetric_mse.mean()
-        
+            per_sample_errors.append(mse.mean(dim=-1))  # (batch,)
+
+        if confidence is not None:
+            # Target confidence = exp(-mean_error). Low error → high confidence,
+            # high error → low confidence. Stop gradient on the target so the
+            # confidence head learns to predict quality, rather than the
+            # predictor degrading itself to be predictable.
+            mean_err = torch.stack(per_sample_errors, dim=-1).mean(dim=-1)  # (batch,)
+            target_conf = torch.exp(-mean_err).detach().unsqueeze(-1)       # (batch, 1)
+            conf_loss = ((confidence - target_conf) ** 2).mean()
+            total_loss = total_loss + self.confidence_weight * conf_loss
+
         return total_loss

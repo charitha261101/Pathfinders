@@ -148,7 +148,7 @@ def train_epoch(model, loader, criterion, optimizer, device, grad_clip):
 
         optimizer.zero_grad()
         preds, confidence = model(x)
-        loss = criterion(preds, target)
+        loss = criterion(preds, target, confidence=confidence)
         loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -171,7 +171,7 @@ def validate(model, loader, criterion, device):
         for x, target in loader:
             x, target = x.to(device), target.to(device)
             preds, confidence = model(x)
-            loss = criterion(preds, target)
+            loss = criterion(preds, target, confidence=confidence)
             total_loss += loss.item()
             n_batches += 1
 

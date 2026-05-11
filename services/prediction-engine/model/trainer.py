@@ -74,7 +74,7 @@ class LSTMTrainer:
                 
                 self.optimizer.zero_grad()
                 preds, confidence = self.model(X_batch)
-                loss = self.criterion(preds, y_batch)
+                loss = self.criterion(preds, y_batch, confidence=confidence)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 self.optimizer.step()
@@ -89,8 +89,8 @@ class LSTMTrainer:
                 for X_batch, y_batch in val_loader:
                     X_batch = X_batch.to(self.device)
                     y_batch = y_batch.to(self.device)
-                    preds, _ = self.model(X_batch)
-                    loss = self.criterion(preds, y_batch)
+                    preds, conf = self.model(X_batch)
+                    loss = self.criterion(preds, y_batch, confidence=conf)
                     val_loss += loss.item()
             val_loss /= len(val_loader)
             

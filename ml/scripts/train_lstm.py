@@ -151,7 +151,7 @@ def train():
         for x_batch, y_batch in train_loader:
             optimizer.zero_grad()
             preds, confidence = model(x_batch)
-            loss = criterion(preds, y_batch)
+            loss = criterion(preds, y_batch, confidence=confidence)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -167,7 +167,7 @@ def train():
         with torch.no_grad():
             for x_batch, y_batch in val_loader:
                 preds, confidence = model(x_batch)
-                loss = criterion(preds, y_batch)
+                loss = criterion(preds, y_batch, confidence=confidence)
                 val_loss += loss.item()
                 n_val_batches += 1
 
