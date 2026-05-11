@@ -105,10 +105,13 @@ def install_frontend_deps(do_install: bool) -> bool:
     if not pkg.exists():
         err(f"missing {pkg}"); return False
     if not do_install:
-        info("would run: npm install (in frontend/)"); return True
+        info("would run: npm install --legacy-peer-deps (in frontend/)"); return True
     info("Installing frontend dependencies …")
+    # --legacy-peer-deps is required: react-scripts@5 peer-deps typescript ^3||^4
+    # while we ship typescript ^5; npm 7+ refuses without this flag.
     try:
-        subprocess.check_call(["npm", "install"], cwd=str(FRONTEND),
+        subprocess.check_call(["npm", "install", "--legacy-peer-deps"],
+                              cwd=str(FRONTEND),
                               shell=platform.system() == "Windows")
         ok("Frontend dependencies installed")
         return True

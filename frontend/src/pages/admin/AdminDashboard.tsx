@@ -18,6 +18,7 @@ interface AdminUser {
   id: string; name: string; email: string; company: string; industry: string;
   plan_name: string; monthly_price: number; sub_status: string;
   site_count: number; open_tickets: number; is_active: boolean;
+  role: string;
 }
 
 export default function AdminDashboard() {

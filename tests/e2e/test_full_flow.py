@@ -109,7 +109,7 @@ class TestFullFlow:
 
         optimizer.zero_grad()
         preds, confidence = model(x_batch)
-        loss = criterion(preds, y_batch)
+        loss = criterion(preds, y_batch, confidence=confidence)
         loss.backward()
         optimizer.step()
 

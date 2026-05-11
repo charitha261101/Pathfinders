@@ -9,9 +9,19 @@ import pytest
 
 os.environ.setdefault("BATFISH_HOST", "localhost")
 os.environ.setdefault("BATFISH_PORT", "9997")
-os.environ.setdefault("SANDBOX_MODE", "mininet")
+
+# Sandbox mode is scoped to this module via an autouse fixture below, so
+# changing it doesn't leak into other test files (notably test_critical_tcs.py
+# whose Req-Qual-Perf-3 < 5 s SLA assertion would otherwise blow up waiting
+# on a 30 s Mininet socket timeout).
 
 from server.sandbox import _run_batfish_analysis  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _batfish_sandbox_mode(monkeypatch):
+    monkeypatch.setenv("SANDBOX_MODE", "mininet")
+    yield
 
 
 def test_batfish_rejects_loop():

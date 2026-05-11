@@ -40,9 +40,9 @@ class TestPathWiseLSTM:
         x = torch.randn(2, 60, 13)
         y = torch.randn(2, 30, 3)
 
-        preds, _ = self.model(x)
+        preds, confidence = self.model(x)
         loss_fn = PathWiseLoss()
-        loss = loss_fn(preds, y)
+        loss = loss_fn(preds, y, confidence=confidence)
         loss.backward()
 
         for name, param in self.model.named_parameters():

@@ -22,6 +22,16 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+# Windows consoles default to cp1252 and choke on the Unicode box characters
+# (─ ✓) we use as decoration. Reconfigure stdout/stderr to UTF-8 so the test
+# runs out of the box on Windows without requiring PYTHONIOENCODING.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 BASE = "http://127.0.0.1:8765"
 
 PASS = "[PASS]"

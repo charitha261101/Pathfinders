@@ -190,12 +190,14 @@ pytest tests/ -k steering         # keyword filter
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| POST | `/api/auth/login` | JWT authentication |
+| POST | `/api/v1/auth/login` | JWT authentication |
+| POST | `/api/v1/auth/register` | Create user (requires admin token, even when AUTH_ENABLED=false) |
 | GET  | `/api/v1/telemetry/{link_id}` | Per-link telemetry |
 | GET  | `/api/v1/predictions/all` | Current LSTM forecasts |
-| POST | `/api/v1/steering/execute` | Trigger a routing change |
-| POST | `/api/sandbox/validate` | Run digital-twin check |
-| POST | `/api/policy` | Submit an intent-based policy |
+| POST | `/api/v1/sandbox/validate` | Run digital-twin check |
+| POST | `/api/v1/ibn/parse` | Preview a natural-language intent (400 on unparseable) |
+| POST | `/api/v1/ibn/intents` | Submit an intent-based policy |
+| POST | `/api/v1/ibn/deploy` | Validate + deploy an intent |
 | GET  | `/api/v1/apps/active` | Detected running applications |
 | POST | `/api/v1/apps/priorities` | Apply per-app QoS rules |
 | GET  | `/api/v1/apps/enforcement-status` | QoS enforcer state |
