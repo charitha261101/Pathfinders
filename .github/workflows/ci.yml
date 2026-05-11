@@ -72,7 +72,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --legacy-peer-deps   # <-- fix: resolves typescript peer conflict
 
       - name: Lint
         working-directory: frontend
