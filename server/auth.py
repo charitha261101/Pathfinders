@@ -22,6 +22,14 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "pathwise-dev-secret-change-in-product
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_MINUTES = int(os.environ.get("JWT_EXPIRY_MINUTES", "60"))
 MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_DURATION_S = 30 * 60  # 30-minute auto-unlock, matches /auth/login/v2 DB path
+
+VALID_ROLES = frozenset({
+    "SUPER_ADMIN", "NETWORK_ADMIN", "IT_MANAGER", "MSP_TECH",
+    "IT_STAFF", "END_USER", "BUSINESS_OWNER",
+})
+# Roles that confer privileged platform access; only SUPER_ADMIN may grant these.
+PRIVILEGED_ROLES = frozenset({"SUPER_ADMIN", "NETWORK_ADMIN"})
 
 
 @dataclass
@@ -106,10 +114,14 @@ def login(email: str, password: str) -> dict:
     user = next((u for u in _users.values() if u.email == email), None)
 
     if user and user.locked_at:
-        raise HTTPException(
-            status_code=423,
-            detail="Account locked due to too many failed attempts. Contact system administrator.",
-        )
+        if time.time() - user.locked_at >= LOCKOUT_DURATION_S:
+            user.locked_at = None
+            user.failed_attempts = 0
+        else:
+            raise HTTPException(
+                status_code=423,
+                detail="Account locked due to too many failed attempts. Contact system administrator.",
+            )
 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -133,6 +145,11 @@ def login(email: str, password: str) -> dict:
 # ── User Management ───────────────────────────────────────────
 
 def register_user(email: str, password: str, role: str) -> User:
+    if role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown role '{role}'. Valid: {sorted(VALID_ROLES)}",
+        )
     if any(u.email == email for u in _users.values()):
         raise HTTPException(status_code=409, detail="Email already registered")
     uid = str(uuid.uuid4())[:8]
@@ -177,6 +194,21 @@ async def get_current_user(request: Request) -> Optional[User]:
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing authentication token")
 
+    token = auth_header[7:]
+    payload = decode_token(token)
+    user = get_user_by_id(payload.get("sub", ""))
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    return user
+
+
+async def get_current_user_strict(request: Request) -> User:
+    """Like get_current_user but does NOT honor AUTH_ENABLED=false dev bypass.
+    Used for privileged operations (user creation, unlock) that must always
+    require a real authenticated token regardless of dev mode."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authentication token")
     token = auth_header[7:]
     payload = decode_token(token)
     user = get_user_by_id(payload.get("sub", ""))

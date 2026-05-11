@@ -326,8 +326,18 @@ def _parse_app_intent(text: str) -> Optional[ParsedIntent]:
     return None
 
 
+class IntentParseError(ValueError):
+    """Raised when natural-language intent text doesn't match any supported pattern.
+    Callers should surface this to clients as HTTP 400 with rephrasing hints
+    (UC-5: 'On ambiguous NLP parse: show error, provide rephrasing
+    suggestions, do NOT attempt deployment')."""
+
+
 def parse_intent(raw_text: str) -> ParsedIntent:
-    """Parse a natural-language intent into a structured policy."""
+    """Parse a natural-language intent into a structured policy.
+
+    Raises IntentParseError when the input matches no known pattern.
+    """
     t = raw_text.lower().strip()
 
     # ── Time-bounded selective degrade has highest precedence ──
@@ -419,10 +429,12 @@ def parse_intent(raw_text: str) -> ParsedIntent:
             preferred_link=links[0] if links else None,
         )
 
-    return ParsedIntent(
-        action=IntentAction.PRIORITIZE,
-        traffic_classes=traffic,
-        preferred_link=links[0] if links else None,
+    raise IntentParseError(
+        f"Could not parse intent: '{raw_text}'. "
+        "Try patterns like 'Prioritize VoIP on fiber', "
+        "'Throttle YouTube to 500 kbps', "
+        "'Block 172.217.14.110 for 2 minutes', or "
+        "'Ensure video latency stays below 50 ms'."
     )
 
 

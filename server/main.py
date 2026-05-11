@@ -20,9 +20,10 @@ import io
 from server.state import state, ActiveRoutingRule, SteeringEvent
 from server.lstm_engine import prediction_loop
 from server.auth import (
-    login as auth_login, register_user, get_current_user, get_ws_user,
-    get_all_users, unlock_user, User, AUTH_ENABLED,
+    login as auth_login, register_user, get_current_user, get_current_user_strict,
+    get_ws_user, get_all_users, unlock_user, User, AUTH_ENABLED, PRIVILEGED_ROLES,
 )
+from fastapi import HTTPException
 from server.rbac import require_role, require_permission
 from server import audit
 from server import alerts
@@ -50,6 +51,7 @@ from server.sandbox import (
 from server.ibn_engine import (
     create_intent, get_all_intents, get_intent, delete_intent,
     pause_intent, resume_intent, serialize_intent, ibn_monitor_loop,
+    IntentParseError,
 )
 
 
@@ -190,10 +192,30 @@ async def login_v2(req: LoginRequest):
         except: pass
 
 
-@app.post("/api/v1/auth/register", dependencies=[Depends(require_role("NETWORK_ADMIN"))])
-async def register_endpoint(req: RegisterRequest):
+@app.post("/api/v1/auth/register")
+async def register_endpoint(
+    req: RegisterRequest,
+    caller: User = Depends(get_current_user_strict),
+):
+    # Strict auth: always required, even when AUTH_ENABLED=false (otherwise
+    # a stranger could register themselves as SUPER_ADMIN against a dev box
+    # exposed on 0.0.0.0).
+    if caller.role not in PRIVILEGED_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Insufficient permissions to register users. Required: {sorted(PRIVILEGED_ROLES)}",
+        )
+    # Only SUPER_ADMIN can grant privileged roles.
+    if req.role in PRIVILEGED_ROLES and caller.role != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only SUPER_ADMIN may grant role '{req.role}'.",
+        )
     user = register_user(req.email, req.password, req.role)
-    audit.log_event("AUTH", actor=req.email, details=f"User registered with role {req.role}")
+    audit.log_event(
+        "AUTH", actor=caller.email,
+        details=f"Registered {req.email} with role {req.role}",
+    )
     return {"id": user.id, "email": user.email, "role": user.role}
 
 
@@ -259,9 +281,12 @@ async def get_links():
 
 @app.get("/api/v1/telemetry/{link_id}")
 async def get_telemetry(link_id: str, window: int = 60):
-    points = state.get_latest_effective(link_id, window)
+    is_known = link_id in state.active_links
+    points = state.get_latest_effective(link_id, window) if is_known else []
+    status = "active" if is_known else "offline"  # UC-1: unknown/offline links advertise their state
     return {
         "link_id": link_id,
+        "status": status,
         "points": [
             {"timestamp": p.timestamp, "latency_ms": round(p.latency_ms, 2),
              "jitter_ms": round(p.jitter_ms, 2), "packet_loss_pct": round(p.packet_loss_pct, 3),
@@ -468,7 +493,10 @@ async def rollback_rule(rule_id: str):
 
 @app.post("/api/v1/ibn/intents", dependencies=[Depends(require_permission("ibn"))])
 async def create_ibn_intent(req: IntentRequest):
-    intent = create_intent(req.text)
+    try:
+        intent = create_intent(req.text)
+    except IntentParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     audit.log_event("POLICY_CHANGE", actor="user",
                      policy_change={"action": "create", "intent_id": intent.id, "text": req.text},
                      details=f"IBN intent created: {req.text[:60]}")
@@ -527,7 +555,10 @@ async def deploy_ibn_intent(req: IntentRequest):
 @app.post("/api/v1/ibn/parse")
 async def parse_ibn_intent(req: IntentRequest):
     from server.ibn_engine import parse_intent, generate_yang_config, NetworkIntent
-    parsed = parse_intent(req.text)
+    try:
+        parsed = parse_intent(req.text)
+    except IntentParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     temp_intent = NetworkIntent(id="preview", raw_text=req.text, parsed=parsed, created_at=time.time())
     temp_intent.yang_config = generate_yang_config(temp_intent)
     return {
@@ -582,9 +613,23 @@ async def update_alert_config(req: AlertConfigRequest):
 #  REPORTS (Req-Func-Sw-21)
 # ================================================================
 
+_VALID_REPORT_FORMATS = {"csv", "pdf"}
+
+
+def _check_report_format(fmt: str) -> str:
+    fmt = fmt.lower()
+    if fmt not in _VALID_REPORT_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{fmt}'. Use one of: {sorted(_VALID_REPORT_FORMATS)}",
+        )
+    return fmt
+
+
 @app.get("/api/v1/reports/health-scores", dependencies=[Depends(require_permission("reports"))])
 async def export_health_scores(format: str = "csv"):
-    if format == "pdf":
+    fmt = _check_report_format(format)
+    if fmt == "pdf":
         data = reports.generate_health_scores_pdf()
         return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
                                   headers={"Content-Disposition": "attachment; filename=health_scores.pdf"})
@@ -594,7 +639,8 @@ async def export_health_scores(format: str = "csv"):
 
 @app.get("/api/v1/reports/steering-events", dependencies=[Depends(require_permission("reports"))])
 async def export_steering_events(format: str = "csv"):
-    if format == "pdf":
+    fmt = _check_report_format(format)
+    if fmt == "pdf":
         data = reports.generate_steering_events_pdf()
         return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
                                   headers={"Content-Disposition": "attachment; filename=steering_events.pdf"})
@@ -604,7 +650,8 @@ async def export_steering_events(format: str = "csv"):
 
 @app.get("/api/v1/reports/audit-log", dependencies=[Depends(require_permission("reports"))])
 async def export_audit_log(format: str = "csv"):
-    if format == "pdf":
+    fmt = _check_report_format(format)
+    if fmt == "pdf":
         data = reports.generate_audit_log_pdf()
         return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
                                   headers={"Content-Disposition": "attachment; filename=audit_log.pdf"})

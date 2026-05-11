@@ -1,6 +1,6 @@
 # services/api-gateway/app/routers/policies.py
 
-from fastapi import APIRouter, WebSocket, Depends
+from fastapi import APIRouter, HTTPException, WebSocket, Depends
 from pydantic import BaseModel
 import re
 from typing import Optional
@@ -181,11 +181,14 @@ intent_parser = IntentParser()
 async def apply_intent(request: IntentRequest):
     """
     Parse a natural language network policy intent and apply it.
-    
+
     Example: POST /api/v1/policies/intent
     Body: {"intent": "Prioritize medical imaging traffic over guest WiFi"}
     """
-    rules = intent_parser.parse(request.intent)
+    try:
+        rules = intent_parser.parse(request.intent)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     
     # Validate in sandbox before applying
     validation_results = []
